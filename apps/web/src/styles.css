@@ -1,0 +1,247 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ */
+/* Design tokens · Bupa blue, calm surfaces, soft depth                 */
+/* ------------------------------------------------------------------ */
+:root {
+  font-family:
+    'Segoe UI',
+    'Inter',
+    -apple-system,
+    'PingFang SC',
+    'Microsoft YaHei',
+    'Noto Sans SC',
+    system-ui,
+    sans-serif;
+  color-scheme: light;
+  --background: #f3f6f9;
+  --foreground: #15283a;
+  --card: #ffffff;
+  --card-foreground: #15283a;
+  --popover: #ffffff;
+  --popover-foreground: #15283a;
+  --primary: #0079c8;
+  --primary-strong: #005e9c;
+  --primary-soft: #e6f2fb;
+  --primary-foreground: #ffffff;
+  --secondary: #eef3f7;
+  --secondary-foreground: #15283a;
+  --muted: #eef3f7;
+  --muted-foreground: #5b6f80;
+  --subtle: #8a9bab;
+  --accent: #e6f2fb;
+  --accent-foreground: #005e9c;
+  --success: #17804d;
+  --success-soft: #e4f5eb;
+  --warning: #b26b00;
+  --warning-soft: #fff3df;
+  --destructive: #c0271d;
+  --destructive-soft: #fdeceb;
+  --violet: #5b4fcf;
+  --violet-soft: #ecebfb;
+  --border: #dfe6ec;
+  --border-strong: #c9d4dd;
+  --input: #dfe6ec;
+  --ring: #0079c8;
+  --radius: 0.875rem;
+  --shadow-sm: 0 1px 2px rgb(21 40 58 / 0.05), 0 1px 1px rgb(21 40 58 / 0.03);
+  --shadow-md: 0 6px 18px -6px rgb(21 40 58 / 0.12), 0 2px 6px -2px rgb(21 40 58 / 0.06);
+  --shadow-lg: 0 20px 40px -16px rgb(21 40 58 / 0.22), 0 6px 14px -8px rgb(21 40 58 / 0.1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --animate-fade-up: fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.25s ease-out both;
+  --animate-slide-in-right: slide-in-right 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
+  --animate-highlight: highlight 1.6s ease-out both;
+  --animate-pop: pop 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-dot: dot 1.2s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes highlight {
+  0% {
+    background-color: #fff3df;
+    box-shadow: 0 0 0 4px rgb(178 107 0 / 0.18);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 rgb(178 107 0 / 0);
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes dot {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  min-width: 1100px;
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button {
+  cursor: pointer;
+  font: inherit;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+input,
+textarea,
+select {
+  font: inherit;
+}
+::selection {
+  background: rgb(0 121 200 / 0.18);
+}
+
+/* Thin, quiet scrollbars for panels */
+.scroll-quiet {
+  scrollbar-width: thin;
+  scrollbar-color: #c9d4dd transparent;
+}
+.scroll-quiet::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-quiet::-webkit-scrollbar-thumb {
+  background: #c9d4dd;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Field that the AI just changed */
+.field-changed {
+  animation: var(--animate-highlight);
+  border-radius: var(--radius-md);
+}
+
+/* A message the Dashboard pointed at as the source of a health item */
+.entry-focused {
+  box-shadow:
+    0 0 0 4px var(--card),
+    0 0 0 6px var(--primary);
+  background-color: var(--primary-soft);
+  padding: 6px;
+  margin: -6px;
+}
+
+/* Soft grid backdrop for the empty chat state */
+.hero-grid {
+  background-image:
+    radial-gradient(circle at 20% 0%, rgb(0 121 200 / 0.1), transparent 45%),
+    radial-gradient(circle at 90% 20%, rgb(91 79 207 / 0.07), transparent 40%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

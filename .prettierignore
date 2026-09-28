@@ -1,0 +1,7 @@
+node_modules
+.pnpm-store
+dist
+pnpm-lock.yaml
+coverage
+*.pdf
+My Bupa Agent 产品定义（最终版）.md

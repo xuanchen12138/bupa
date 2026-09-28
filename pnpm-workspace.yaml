@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+storeDir: .pnpm-store
+saveExact: true
+strictPeerDependencies: true
+verifyDepsBeforeRun: error
+allowBuilds:
+  esbuild: true

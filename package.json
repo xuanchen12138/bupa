@@ -1,0 +1,29 @@
+{
+  "name": "my-bupa-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "pnpm build:contracts && concurrently -k -s first -n contracts,api,web \"pnpm --filter @bupa/contracts dev\" \"pnpm --filter @bupa/api dev\" \"pnpm --filter @bupa/web dev\"",
+    "build:contracts": "pnpm --filter @bupa/contracts build",
+    "build": "pnpm -r build",
+    "start": "concurrently -k -s first -n api,web \"pnpm --filter @bupa/api start\" \"pnpm --filter @bupa/web preview\"",
+    "typecheck": "pnpm build:contracts && pnpm -r typecheck",
+    "test": "pnpm build:contracts && pnpm --filter @bupa/api test",
+    "test:personalization-contracts": "pnpm build:contracts && pnpm --filter @bupa/api test:personalization-contracts",
+    "format": "prettier --write apps packages docs package.json pnpm-workspace.yaml tsconfig.base.json README.md .prettierrc.json",
+    "format:check": "prettier --check apps packages docs package.json pnpm-workspace.yaml tsconfig.base.json README.md .prettierrc.json",
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "10.0.5",
+    "prettier": "3.9.9",
+    "typescript": "5.9.3"
+  }
+}

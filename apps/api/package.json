@@ -1,0 +1,23 @@
+{
+  "name": "@bupa/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --include ../../packages/contracts/dist/**/*.js src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:personalization-contracts": "node --import tsx --test test/personalization-contract.check.ts"
+  },
+  "dependencies": {
+    "@bupa/contracts": "workspace:*",
+    "@hono/node-server": "2.1.1",
+    "hono": "4.13.9",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}
