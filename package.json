@@ -18,7 +18,10 @@
     "test:personalization-contracts": "pnpm build:contracts && pnpm --filter @bupa/api test:personalization-contracts",
     "format": "prettier --write apps packages docs package.json pnpm-workspace.yaml tsconfig.base.json README.md .prettierrc.json",
     "format:check": "prettier --check apps packages docs package.json pnpm-workspace.yaml tsconfig.base.json README.md .prettierrc.json",
-    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build",
+    "db:migrate": "pnpm build:contracts && pnpm --filter @bupa/api db:migrate",
+    "test:live": "pnpm build:contracts && pnpm --filter @bupa/api test:live",
+    "test:runtime": "pnpm build:contracts && pnpm --filter @bupa/api build && pnpm --filter @bupa/api test:runtime"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

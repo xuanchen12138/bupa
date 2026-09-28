@@ -408,7 +408,9 @@ function actionReceipt(
       'No change to your policy',
       'No information sent to a real clinic',
     ],
-    retention: 'In-memory demo record; cleared when the demo resets or the server restarts',
+    retention: ctx.store.persistent
+      ? 'Stored locally with the confirmed demo booking until demo reset'
+      : 'In-memory demo record; cleared when the demo resets or the server restarts',
     scope: 'single_action',
     status: 'completed',
     fields: [],
@@ -437,6 +439,14 @@ export function submitDraft(
   ctx: BackendContext,
   draftId: string,
 ): { booking: Booking; receipt: Receipt } {
+  const previous = ctx.store.submissions.get(draftId);
+  if (previous) {
+    const booking = ctx.store.schedule.bookings.find((item) => item.id === previous.bookingId);
+    const receipt = ctx.store.receipts.find((item) => item.id === previous.receiptId);
+    if (!booking || !receipt)
+      fail(409, 'BOOKING_STATE_INVALID', 'The original booking result is unavailable.');
+    return clone({ booking, receipt });
+  }
   const draft = ownedDraft(ctx, draftId);
   if (draft.status === 'submitted') {
     const booking = ctx.store.schedule.bookings.find((item) => item.draftId === draft.id);
@@ -526,6 +536,13 @@ export function submitDraft(
   draft.status = 'submitted';
   draft.updatedAt = now(ctx);
   for (const field of Object.values(draft.fields)) field.confirmed = true;
+  ctx.store.submissions.set(draft.id, {
+    bookingId: booking.id,
+    receiptId: receipt.id,
+    conversationId: draft.conversationId ?? null,
+  });
+  // Confirmation has its own booking snapshot; retries no longer require raw draft fields.
+  draft.fields = {};
   return clone({ booking, receipt });
 }
 

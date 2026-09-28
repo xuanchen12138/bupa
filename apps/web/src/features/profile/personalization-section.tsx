@@ -55,7 +55,9 @@ export function PersonalizationSection() {
             <p className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle">
               <Database size={12} aria-hidden="true" />
               {api.features.storage === 'browser' ? t('history.storage') : t('history.unavailable')}
-              {api.features.conversations ? ` · ${count} ${t('history.title')}` : ''}
+              {api.features.conversations
+                ? ` · ${count === 1 ? t('personal.countOne') : `${count} ${t('personal.countMany')}`}`
+                : ''}
             </p>
           </div>
         </li>

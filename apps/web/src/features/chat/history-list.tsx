@@ -181,7 +181,7 @@ export function HistoryList() {
                           type="button"
                           aria-label={`${t('history.delete')}: ${conversation.title}`}
                           onClick={() => setPendingDelete(conversation)}
-                          className="mr-1 rounded-md p-1.5 text-subtle opacity-0 transition-opacity hover:bg-card hover:text-destructive focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover:opacity-100"
+                          className="mr-1 rounded-md p-1.5 text-subtle opacity-0 transition-opacity hover:bg-card hover:text-destructive focus:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-hover:opacity-100"
                         >
                           <Trash2 size={14} aria-hidden="true" />
                         </button>

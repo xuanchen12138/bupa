@@ -13,6 +13,7 @@ import { api, isApiError } from '@/lib/api';
 import { isAbortError } from '@/lib/errors';
 import { forgetConversation, invalidateAll, keys, queryClient } from '@/lib/query';
 import { useLocale } from '@/i18n';
+import { titleFromMessage } from '@/mock/history-repository';
 import { useWizard } from './wizard';
 
 /**
@@ -310,14 +311,25 @@ export const useChat = create<ChatState>((set, get) => {
     if (run && !run.turnId) run.turnId = event.turnId;
     if (event.payload.type === 'turn_accepted') {
       const { userMessageId, clientMessageId } = event.payload;
-      update(cid, (view) => ({
-        turnId: event.turnId,
-        items: view.items.map((item) =>
-          item.kind === 'user' && item.clientMessageId === clientMessageId
-            ? { ...item, id: userMessageId, turnId: event.turnId, optimistic: false }
-            : item,
-        ),
-      }));
+      update(cid, (view) => {
+        const sent = view.items.find(
+          (item): item is Extract<ChatItem, { kind: 'user' }> =>
+            item.kind === 'user' && item.clientMessageId === clientMessageId,
+        );
+        return {
+          turnId: event.turnId,
+          // The server sets the real title from the first message; show the same thing meanwhile.
+          conversation:
+            view.conversation && !view.conversation.title && sent
+              ? { ...view.conversation, title: titleFromMessage(sent.text) }
+              : view.conversation,
+          items: view.items.map((item) =>
+            item.kind === 'user' && item.clientMessageId === clientMessageId
+              ? { ...item, id: userMessageId, turnId: event.turnId, optimistic: false }
+              : item,
+          ),
+        };
+      });
       return;
     }
     applyChatEvent(cid, event.payload, event.entryId);
@@ -584,12 +596,18 @@ export const useChat = create<ChatState>((set, get) => {
       const wizard = useWizard.getState();
       if (wizard.conversationId === id) wizard.close();
       set((state) => {
-        const views = { ...state.views };
-        delete views[id];
+        const views: Record<string, ConversationView> = {};
+        // Other conversations may hold prompts derived from the deleted one (now redacted
+        // server-side), so they are re-read before they are shown again.
+        for (const [key, view] of Object.entries(state.views)) {
+          if (key !== id) views[key] = { ...view, loaded: false };
+        }
         const selectedId = state.selectedId === id ? null : state.selectedId;
         storeSelected(selectedId);
         return { views, selectedId, focusEntryId: null };
       });
+      const selected = get().selectedId;
+      if (selected) void get().load(selected, true);
       forgetConversation(id);
       invalidateAll();
     },

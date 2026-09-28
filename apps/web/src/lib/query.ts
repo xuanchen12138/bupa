@@ -42,4 +42,13 @@ export function forgetConversation(id: string) {
 }
 
 // The mock service mutates state during scripted conversations; keep the UI in sync.
-api.subscribe(() => invalidateAll());
+// Coalesced, because a streaming turn commits on every event and the chat view already
+// applies those events itself.
+let pending: ReturnType<typeof setTimeout> | null = null;
+api.subscribe(() => {
+  if (pending) return;
+  pending = setTimeout(() => {
+    pending = null;
+    invalidateAll();
+  }, 250);
+});

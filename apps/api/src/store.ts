@@ -19,6 +19,8 @@ export interface SessionState {
   activeChat: AbortController | null;
 }
 export interface DemoStore {
+  ownerId: string;
+  persistent: boolean;
   profile: ProfileResponse;
   schedule: Schedule;
   providers: Provider[];
@@ -31,10 +33,17 @@ export interface DemoStore {
   consentWaiters: Map<string, Set<(decision: ConsentDecision) => void>>;
   draftSessions: Map<string, string>;
   draftProgress: Map<string, number>;
+  draftSources: Map<string, string[]>;
+  submissions: Map<string, { bookingId: string; receiptId: string; conversationId: string | null }>;
   clock: () => Date;
 }
-export function createDemoStore(clock: () => Date = () => new Date()): DemoStore {
+export function createDemoStore(
+  clock: () => Date = () => new Date(),
+  ownerId = 'demo-lin',
+): DemoStore {
   return {
+    ownerId,
+    persistent: false,
     profile: structuredClone(demoProfile),
     schedule: { ...structuredClone(emptySchedule), cards: structuredClone(demoCards) },
     providers: demoProviders(clock()),
@@ -47,6 +56,8 @@ export function createDemoStore(clock: () => Date = () => new Date()): DemoStore
     consentWaiters: new Map(),
     draftSessions: new Map(),
     draftProgress: new Map(),
+    draftSources: new Map(),
+    submissions: new Map(),
     clock,
   };
 }

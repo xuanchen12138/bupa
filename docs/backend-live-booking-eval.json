@@ -1,0 +1,14 @@
+{
+  "executedAt": "2026-09-28T04:13:57.161Z",
+  "provider": "OpenAI Responses",
+  "model": "gpt-4.1-mini",
+  "data": "fictional only",
+  "passed": true,
+  "checks": [
+    "Real extraction preserves improving status and source references.",
+    "Real plan and reply open a source-linked draft after consent; no automatic booking.",
+    "Five explicit review steps and idempotent submit produce one fictional booking; booking is not recovery.",
+    "Delete original source removes derived chat/report while retaining the user-confirmed booking."
+  ],
+  "failure": null
+}

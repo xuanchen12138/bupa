@@ -1,66 +1,34 @@
 # 工程与协作约定
 
-当前代码包含完整的离线演示后端，已有 REST 写入、预约状态机、权限守卫和聊天 SSE。产品基线为根目录《My Bupa Agent 产品定义（最终版）.md》；新增历史与个性化范围遵循 [双 Agent 实施报告](../chat-history-personalized-health-plan.md)。本页区分已实现的业务和第二阶段设计，不把前端本地演示等同于服务端持久化。
+阶段二后端已实现；产品与验收基线见 [实施报告](../chat-history-personalized-health-plan.md)，实际验证与限制见 [后端状态](backend-personalization-status.md)。
 
-## 文件与执行边界
+## 文件边界
 
-- `packages/contracts` 是 Zod schema、推导类型、fixtures、事件和向导定义的统一来源，由前端团队维护；后端消费同一导出，发现缺口反馈给前端，不另建一套 DTO。
-- `apps/web` 负责页面、历史交互、向导渲染和事件展示。REST 使用 TanStack Query，跨组件状态使用 zustand；统一适配器选择 `mock` 或 `http`。
-- `apps/api` 负责 REST/SSE、业务状态、权限、会话、向导校验、离线 Agent 和回执。业务逻辑已拆分到 `booking.ts`、`permissions.ts`、`member.ts`、`providers.ts`、`sessions.ts` 等模块。
-- 演示 fixture 从 `@bupa/contracts/fixtures` 导出。`ScriptedLLM` 仅根据当前消息生成规则计划；Profile 预填由普通后端代码按授权执行，不向模型传入完整会员资料。
-- 浏览器 HTTP 请求使用 `/api/*`，Vite 代理至 Hono 并移除 `/api` 前缀。当前本地方案不等于生产部署、认证或跨域配置。
+- packages/contracts：FE 维护共享 Zod/DTO/fixture，BE 消费同一导出。
+- apps/web：FE 维护 mock/http adapter、历史、Dashboard、向导和来源跳转。
+- apps/api：BE 维护 Hono REST/SSE、权限/预约、SQLite、模型、来源与删除一致性。
+- 根 manifest、环境示例与后端说明由 BE 维护。本轮不改变 FE 源码。
 
-## 当前业务与协议
+## 服务端执行
 
-既有预约业务结构沿用契约 0.2.0：Member/Profile、Cover、Provider、WizardDraft、Booking、Schedule、ConsentRequest、Receipt、ChatRequest、ChatEvent，以及五步向导字段元数据。FE 已将既有结构移到 `core.ts`，并新增 `conversations.ts`、`personalization.ts`，通过主入口统一导出；包版本仍为 0.2.0，版本与新 M0 冻结需继续核对。费用未知时使用 `null`；fixture 中已有已标注的虚构费用区间。
+请求先解析可信 owner，再在该 owner 下解析短期 cookie session。默认入口只提供本地 Lin 虚构身份；长期历史归属不依赖 cookie 是否过期。
 
-| 模块       | 已实现的服务端能力                                                                        |
-| ---------- | ----------------------------------------------------------------------------------------- |
-| 资料与权限 | Profile 读取/编辑、字段使用权限、授权请求与决定、数据回执、撤回与依赖字段失效             |
-| 预约       | 新建/恢复/编辑草稿、用户逐页确认、最终提交、幂等返回、时段冲突校验、取消、改期、操作回执  |
-| 日程       | 预约与草稿读取、提醒创建/开关、备注、固定演示卡片关闭                                     |
-| 查询       | 模拟保障、诊所列表与详情、已授权筛选、用户手填字段的本次搜索路径                          |
-| 对话       | 离线 `ScriptedLLM`、中英文回复、危险信号阻断、授权暂停/恢复、向导预填、SSE 进度与结束事件 |
-| 生命周期   | cookie 会话、到期/关闭清理、流中断清理、演示重置                                          |
+app.ts 适配 HTTP/SSE；repository.ts 管理 SQLite 事务、历史顺序、幂等、版本和来源关联；personalization.ts 管理用途授权、证据、派生内容和建议状态。booking/permissions/member/providers/sessions 保留确定性业务守卫。chat-execution.ts 在守卫内组合语言模型与业务工具，models.ts 仅提供结构化分类、回复和抽取。
 
-路由及 JSON 结构见 [后端联调约定](backend-integration.md)。例如 `/chat` 是 POST SSE，`/consent/:id` 接收 JSON 决定，`/wizards/:id/submit` 是独立的用户提交入口。未来历史、健康概览、个性化设置和建议启动的 HTTP 接口仍是第二阶段目标，当前没有这些路由。
+模型得到获准的当前输入、带来源时间的受限历史及工具结果，不获得完整 Profile 或任意 HTTP 工具。模型不能确认页面、提交/取消预约、支付、修改授权或联系他人。预约提交仍是用户显式 HTTP 命令。
 
-聊天授权保持在同一个 SSE 响应中：发送 `consent_request` 后等待独立授权请求，再发送 `consent_resolved` 和成功授权的 `receipt`，继续工具或向导工作；最后发送 `done` 并关闭流。决定可以先于等待者到达。授权等待上限为 120 秒，流有保活；中断、超时和重置需要释放等待者与运行锁。同一工具的进度事件沿用相同 ID。
+## 持久与临时状态
 
-## 当前数据与身份
+SQLite 单进程持久化 owner 业务聚合、历史消息、轮次、用途设置、概览、建议、来源边、最小提交结果和生成任务状态。单次预约/删除/撤权及相关派生变更使用同一事务。
 
-`DemoStore` 只在内存中保存一份默认 Lin 的演示资料、预约、回执、草稿及会话映射；服务重启或重置后加载 fixture。没有数据库、迁移或服务端聊天历史存储。
+运行中的 AbortController、consent waiter、session grant、未提交草稿留在内存。重启后轮次中断、临时授权失效，旧草稿不恢复。providers 的绝对时段随业务快照保存，重启不把已预约时段平移到新日期。
 
-服务器生成 HttpOnly、SameSite=Strict 的 `bupa_session` cookie，空闲 TTL 为 30 分钟，请求会续期。它约束本次授权、草稿、待决 consent 与运行请求；客户端提交的聊天 `sessionId` 不作为身份凭证。会话结束时撤回 session 授权、停止运行工作并清理未提交草稿；`always` 权限在当前内存演示中保留到撤回或重置。
+源变更先使概览失效；发布前再比较 sourceRevision、授权和来源。删除/关闭用途中断任务、清除派生数据和相关自动预填。确认预约独立保留，不作为新的症状来源。
 
-Profile、预约和回执属于共享 Lin 演示数据。cookie 不是会员登录，当前也没有生产多用户 owner 隔离。浏览器刷新不重启 API；新增前端历史是否可恢复由浏览器持久化实现与验收确定，不能把本地恢复视为服务端保存。
+## 接口与模式
 
-## 已实现且需保留的约束
+运行时契约 0.3.0；旧 /chat 保持裸 ChatEvent，新历史流使用 ConversationStreamEvent 外壳。先落用户消息再发 turn_accepted；完成事件不代替业务提交。GET 历史不会重放副作用。
 
-1. Agent 工具没有提交预约、取消预约或推进向导步骤的能力。模型只预填允许来源的字段；用户提交接口重新校验草稿、步骤、授权与时段。
-2. Profile 中存在字段，不等于 AI 可使用。后端检查字段权限、当前有效会话和撤回状态；用户手填字段保持 `user` 来源，不自动授予 Profile 权限。
-3. 拒绝邮编授权可继续使用无需位置的远程选项，同一会话的拒绝不会重复询问。用户后续明确修改 Profile 权限可重新授权。
-4. 撤回会使依赖授权的未提交预填、诊所/时段选择失效；数据回执改为 revoked，而非删除整个审计记录。已确认预约仍由独立取消入口处理。
-5. 敏感心理支持类别使用独立的 session 授权。聊天与手动向导都不能绕过服务端检查；手动界面的授权接入限制见联调文档。
-6. 当前安全规则用于中英文危险描述的演示阻断，聊天和向导写入/提交共用相关检查。软件测试不代表医学验证，也不构成诊断或可靠分诊能力。
-7. 所有保障、费用和诊所结果保持演示标识。提醒不会发送外部通知，人工转接不会实际发送摘要或创建真实工单。
+MODEL_MODE 区分 scripted/openai；DEMO_MODE=true 表示业务数据虚构。前端 mock 使用独立浏览器存储，http 通过 Vite /api 代理访问后端。当前 FE HTTP 历史/个性化能力开关待 FE 开启。
 
-## 历史与个性化：阶段边界
-
-第一阶段使用 `VITE_API_MODE=mock`，由前端实现本地多对话、刷新恢复、删除、来源跳转、健康概览和关联建议。后端本阶段只承担新增契约消费检查（BE-01）、持久化/身份/删除设计（BE-02）和说明校正（BE-03），不为手臂示例改造通用 Agent，不要求模型凭证。
-
-**新增 schema 和手臂对话 seed 已发布且通过 BE 消费检查；版本同步和 M0 最终业务约定仍待双方确认。**运行时 CONTRACT_VERSION 为 0.3.0；Conversation、SourceRef、HealthFact 等导出不等于已经完成相应 HTTP 实现。最终结果、冻结状态与缺口以 [后端个性化状态](backend-personalization-status.md) 为准。
-
-第二阶段需要独立的长期 owner、conversation、turn/message 与临时授权 session 关系；owner 不能由客户端任意指定。持久化设计应覆盖来源引用、幂等请求、版本一致性和中断恢复，同时复用已有预约守卫。
-
-删除来源对话或撤回个性化授权必须使相关派生概览、建议与模型上下文失效，并防止旧异步结果写回；已确认预约及必要操作回执不能随聊天删除被取消。聊天保存、用于个性化和敏感字段授权是不同用途，不能以一个总开关替代。表、索引、事务与删除链设计集中记录在后端状态文档；本页不宣称这些能力已实现。
-
-真实模型也属于第二阶段。当前 `AgentModel.plan(message)` 为同步规则接口，`config.ts` 仅接受 `DEMO_MODE=true`；新增模型需要异步适配、结构化输出验证、授权过滤、来源验证、失败处理和独立效果评估，不能仅配置 API key 就宣称支持。
-
-## 检查与证据
-
-现有 API 测试覆盖契约、预约、权限、会话、Agent 及 SSE 行为。根 `pnpm test` 先构建 contracts，再运行 API 测试，不执行前端持久化或浏览器交互测试。前端、持久层、真实模型与跨层联调应分别提供检查命令和实际结果。
-
-新增 `pnpm test:personalization-contracts` 单独消费 FE 已加入的新契约导出，检查 M0 核心可用性；缺少导出或样例不符合 schema 时明确失败。它没有接入根 `pnpm test` / `pnpm check`，避免未冻结的新 M0 阻断既有演示，也不替代完整语义、持久化或模型验收。
-
-本页是架构状态说明，不提供本轮测试通过证明。历史检查记录保留其原有范围；新增阶段只使用 [后端个性化状态](backend-personalization-status.md) 中本轮实际执行的结果。
+真实 API 数据处理、字符预算、错误处理和 Node SQLite 限制均见后端状态文档，不把本地测试视为生产认证、医学验证或真实 Bupa 接口验收。

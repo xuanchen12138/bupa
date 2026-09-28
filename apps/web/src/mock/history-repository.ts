@@ -68,14 +68,20 @@ export function listConversations(state: HistoryState) {
 
 export function createConversation(
   state: HistoryState,
-  input: { id: string; requestId: string; now: string; originSuggestionId?: string | null },
+  input: {
+    id: string;
+    requestId: string;
+    now: string;
+    originSuggestionId?: string | null;
+    title?: string;
+  },
 ): Conversation {
   const existingId = state.createRequests[input.requestId];
   const existing = existingId ? state.conversations[existingId] : undefined;
   if (existing) return existing;
   const conversation: Conversation = {
     id: input.id,
-    title: '',
+    title: input.title ?? '',
     createdAt: input.now,
     updatedAt: input.now,
     activeDraftId: null,
@@ -189,6 +195,14 @@ export function deleteConversation(state: HistoryState, conversationId: string) 
 function redactDerivedEntry(
   entry: Extract<ConversationEntry, { kind: 'user' | 'assistant' }>,
 ): ConversationEntry {
+  if (entry.kind === 'assistant')
+    return {
+      ...entry,
+      text: '',
+      translation: null,
+      suggestions: [],
+      sourceRefs: [] as SourceRef[],
+    };
   return { ...entry, text: '', sourceRefs: [] as SourceRef[] };
 }
 

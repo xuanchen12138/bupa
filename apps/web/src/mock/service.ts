@@ -196,6 +196,7 @@ const TEXT = {
     zh: '我想和 GP 确认一下之前提到的手臂受伤的恢复情况，请帮我准备一次预约。',
     en: 'I would like to check the arm injury I mentioned earlier with a GP. Please prepare a booking for me to confirm.',
   },
+  followUpTitle: { zh: '手臂受伤 · GP 预约', en: 'Arm injury · GP booking' },
 };
 
 export class MockService {
@@ -1181,6 +1182,24 @@ export class MockService {
     this.state.schedule.drafts = this.state.schedule.drafts.filter(
       (d) => (d.conversationId ?? null) !== id,
     );
+    // Follow-up conversations that were started from this one lose the prefill derived from it.
+    const derivedFrom = new Set<string>();
+    for (const [otherId, entries] of Object.entries(this.state.history.entries)) {
+      if (
+        entries.some(
+          (e) =>
+            (e.kind === 'user' || e.kind === 'assistant') &&
+            e.sourceRefs.some((ref) => ref.conversationId === id),
+        )
+      )
+        derivedFrom.add(otherId);
+    }
+    for (const draft of this.state.schedule.drafts) {
+      if (!draft.conversationId || !derivedFrom.has(draft.conversationId)) continue;
+      const need = draft.fields.need;
+      if (need && need.source === 'conversation')
+        draft.fields.need = { value: null, source: 'user', confirmed: false };
+    }
     history.deleteConversation(this.state.history, id);
     for (const record of Object.values(this.state.personalization.records)) {
       if (record.followUpConversationId === id) record.followUpConversationId = null;
@@ -1314,13 +1333,15 @@ export class MockService {
       let entryId: string | null = null;
       switch (event.type) {
         case 'message':
+          // Replies in a turn started from a suggestion refer to its sources, so they are
+          // redacted together with the source if it is ever deleted.
           entryId = append({
             kind: 'assistant',
             turnId,
             text: event.text,
             translation: event.translation,
             suggestions: event.suggestions,
-            sourceRefs: [],
+            sourceRefs: originSuggestion?.sourceRefs ?? [],
           }).id;
           break;
         case 'tool_status': {
@@ -1709,6 +1730,7 @@ export class MockService {
         requestId: `start-${id}-${record.startCount}`,
         now: nowIso(),
         originSuggestionId: id,
+        title: TEXT.followUpTitle[this.locale],
       });
     record.followUpConversationId = conversation.id;
     record.dismissedAt = null;

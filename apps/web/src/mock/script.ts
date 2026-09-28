@@ -79,9 +79,12 @@ export function detectIntent(text: string, isHealthSource = false): Intent {
   )
     return 'safety';
   // A follow-up about a known injury ("it's better now") is an update, not a new request.
+  // It counts as one when the conversation already reports the item, or the message itself
+  // refers back to an earlier mention; a brand-new report keeps the booking flow.
+  const refersBack = /之前|上次|先前|earlier|mentioned|previously|before|last time/i.test(text);
   if (
     (mentionsArm(text) || isHealthSource) &&
-    !isOwnArmInjuryReport(text) &&
+    (isHealthSource || refersBack || !isOwnArmInjuryReport(text)) &&
     classifyStatusUpdate(text) !== null &&
     !/预约|book|appointment/i.test(text)
   )

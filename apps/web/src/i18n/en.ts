@@ -367,6 +367,8 @@ export const en = {
     'Personalisation on. The overview is built from conversations that still exist.',
   'personal.disabledToast':
     'Personalisation off. Derived health items were removed; conversations were kept.',
+  'personal.countOne': '1 conversation saved',
+  'personal.countMany': 'conversations saved',
   'personal.unavailable': 'Not enabled on this server yet.',
 } as const;
 

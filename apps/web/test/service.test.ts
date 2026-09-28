@@ -263,6 +263,8 @@ test('deleting the source conversation removes the overview, redacts derived pro
   const followUp = await service.conversationMessages(start.conversationId);
   const prompt = followUp.items.find((e) => e.kind === 'user');
   assert.equal(prompt?.kind === 'user' && prompt.text, '', 'derived prompt is redacted');
+  const reply = followUp.items.find((e) => e.kind === 'assistant');
+  assert.equal(reply?.kind === 'assistant' && reply.text, '', 'derived replies are redacted too');
   const schedule = await service.schedule();
   assert.equal(schedule.bookings.find((b) => b.id === booking.id)?.status, 'confirmed');
   await assert.rejects(
@@ -284,6 +286,27 @@ test('deleting a conversation with an unsubmitted draft drops that draft only', 
     schedule.drafts.map((d) => d.id),
     [manual.id],
   );
+});
+
+test('deleting the source clears prefill derived from it in a follow-up draft', async () => {
+  const { service } = createService();
+  const overview = await service.healthOverview();
+  const suggestion = overview.suggestions.find((s) => s.action === 'prepare_gp_booking')!;
+  const start = await service.startSuggestion(suggestion.id, {
+    requestId: 'p',
+    expectedSnapshotRevision: overview.snapshotRevision,
+  });
+  await runTurn(service, start.conversationId, start.initialMessage.zh, {
+    clientMessageId: start.clientMessageId,
+    originSuggestionId: start.originSuggestionId,
+    onConsent: 'deny',
+  });
+  let schedule = await service.schedule();
+  assert.match(String(schedule.drafts[0]?.fields.need?.value), /手臂/);
+  await service.deleteConversation(DEMO_CONVERSATION_ID);
+  schedule = await service.schedule();
+  assert.equal(schedule.drafts.length, 1, 'the follow-up draft itself stays');
+  assert.equal(schedule.drafts[0]?.fields.need?.value, null, 'but the derived need is cleared');
 });
 
 test('switching personalisation off clears derived data and keeps chats; on again regenerates', async () => {

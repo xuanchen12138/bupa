@@ -16,7 +16,6 @@ import { useT } from '@/i18n';
 import { api } from '@/lib/api';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { invalidateAll } from '@/lib/query';
-import { cn } from '@/lib/utils';
 import { useNavigation } from '@/stores/navigation';
 import { useSuggestionActions } from './use-suggestion-actions';
 
@@ -117,7 +116,7 @@ export function HealthOverview({
                 {t('health.pending')}
               </p>
             ) : null}
-            {overview.summary ? (
+            {overview.summary && overview.facts.length > 1 ? (
               <p className="text-[15px] leading-7">{tx(overview.summary)}</p>
             ) : null}
             <ul className="grid gap-3 md:grid-cols-2">
@@ -211,7 +210,6 @@ function FactCard({
           </Button>
         ) : null}
       </div>
-      <span className={cn('sr-only')}>{fact.topicKey}</span>
     </li>
   );
 }

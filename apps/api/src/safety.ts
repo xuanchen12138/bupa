@@ -30,9 +30,25 @@ export function detectSafety(message: string, locale: 'en' | 'zh' = 'en'): Safet
     );
   if (educational && !reportsSymptoms) return null;
 
-  const matched = [...text.matchAll(redFlags)].some(
-    (match) => !isNegated(text.slice(0, match.index)),
-  );
+  const matched = [...text.matchAll(redFlags)].some((match) => {
+    const prefix = text.slice(0, match.index);
+    if (isNegated(prefix)) return false;
+    const sentence =
+      text
+        .slice(Math.max(0, prefix.search(/[^.!?。！？]*$/u)), match.index + match[0].length + 80)
+        .split(/[.!?。！？]/u)[0] ?? '';
+    const historical =
+      /\b(?:ago|last (?:week|month|year)|previously|used to)\b|(?:天|周|星期|个月|年)前|上周|上个月|去年|曾经|当时/iu.test(
+        sentence,
+      );
+    const current = /\b(?:now|currently|still|today)\b|现在|目前|仍然|仍在|还在/iu.test(
+      sentence.replace(
+        /\b(?:now|currently|today)\s+(?:gone|resolved|recovered|fine|better|no\b[^,;]*)|现在(?:已经)?(?:好了|没事|不痛|没有[^，；]*)/giu,
+        '',
+      ),
+    );
+    return !historical || current;
+  });
   if (!matched) return null;
 
   const zh = locale === 'zh';

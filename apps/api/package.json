@@ -9,7 +9,10 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "test:personalization-contracts": "node --import tsx --test test/personalization-contract.check.ts"
+    "test:personalization-contracts": "node --import tsx --test test/personalization-contract.check.ts",
+    "db:migrate": "node --import tsx src/migrate.ts",
+    "test:live": "node --import tsx test/live-model.check.ts && node --import tsx test/live-booking.check.ts",
+    "test:runtime": "node --import tsx test/runtime.check.ts"
   },
   "dependencies": {
     "@bupa/contracts": "workspace:*",

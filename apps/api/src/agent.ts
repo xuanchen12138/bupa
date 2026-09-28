@@ -60,8 +60,8 @@ export interface AgentPlan {
 
 /** A future model adapter may classify the message; execution and all authorization stay below. */
 export interface AgentModel {
-  readonly mode: 'demo';
-  plan(message: string): AgentPlan;
+  readonly mode: 'demo' | 'openai';
+  plan(message: string): AgentPlan | Promise<AgentPlan>;
 }
 
 function serviceFor(text: string): ServiceType {
@@ -177,6 +177,7 @@ export async function runDemoAgent(
   tools: AgentTools,
   emit: (event: ChatEvent) => Promise<void>,
   signal: AbortSignal,
+  planner: AgentModel = model,
 ): Promise<void> {
   const lang = /[㐀-鿿]/u.test(request.message)
     ? 'zh'
@@ -256,7 +257,8 @@ export async function runDemoAgent(
     await send(alert);
     return;
   }
-  const plan = model.plan(request.message);
+  const plan = await planner.plan(request.message);
+  throwIfAborted(signal);
 
   if (plan.intent === 'information') {
     if (/区别|difference|什么是.*(?:gp|急诊)|what is.*(?:gp|emergency)/iu.test(request.message)) {

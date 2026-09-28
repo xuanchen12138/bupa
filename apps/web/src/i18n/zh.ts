@@ -346,5 +346,7 @@ export const zh: Dictionary = {
   'personal.receipt': '用途回执',
   'personal.enabledToast': '个性化已开启，概览按仍存在的对话生成。',
   'personal.disabledToast': '个性化已关闭，派生的健康事项已删除，对话保留。',
+  'personal.countOne': '已保存 1 段对话',
+  'personal.countMany': '段对话已保存',
   'personal.unavailable': '服务端尚未启用。',
 };

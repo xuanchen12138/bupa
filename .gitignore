@@ -13,3 +13,6 @@ tmp/
 playwright-report/
 test-results/
 _to_delete/
+.data/
+.ppt-build/
+~$*.pptx
