@@ -115,6 +115,7 @@ export const ProviderSchema = z.object({
   distanceKm: z.number().nonnegative().nullable(),
   /** Estimated door-to-door trip; null for telehealth. */
   travelMinutes: z.number().nonnegative().nullable().optional(),
+  website: z.url().nullable().optional(),
   languages: z.array(z.string()),
   relationship: z.enum(['bupa_owned', 'partner', 'independent']),
   telehealth: z.boolean().default(false),
@@ -274,6 +275,23 @@ export const ChatRequestSchema = z.object({
   uiLocale: z.enum(['en', 'zh']).default('en'),
   openDraftId: z.string().nullable().default(null),
 });
+/** One recommended provider with how it matches (or misses) each shared preference. */
+export const ProviderMatchSchema = z.object({
+  providerId: z.string(),
+  points: z.array(z.object({ ok: z.boolean(), text: LocalizedTextSchema })),
+});
+/** Prefill the assistant has gathered for a booking, applied once the member picks a clinic. */
+export const BookingPrefillSchema = z.object({
+  fields: z.record(z.string(), WizardFieldValueSchema),
+  sources: z.record(z.string(), FieldSourceSchema),
+});
+export const ProviderOptionsSchema = z.object({
+  providers: z.array(ProviderSchema),
+  matches: z.array(ProviderMatchSchema),
+  personalisedBy: z.array(ProfileFieldNameSchema).default([]),
+  prefill: BookingPrefillSchema,
+});
+
 export const ChatEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('message'),
@@ -292,6 +310,8 @@ export const ChatEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('consent_request'), request: ConsentRequestSchema }),
   z.object({ type: z.literal('consent_resolved'), requestId: z.string() }),
+  /** Top recommendations for the member to choose from; nothing is prefilled until they pick. */
+  z.object({ type: z.literal('provider_options'), id: z.string(), options: ProviderOptionsSchema }),
   z.object({ type: z.literal('wizard_open'), draft: WizardDraftSchema }),
   z.object({
     type: z.literal('wizard_prefill'),
@@ -347,6 +367,9 @@ export type WizardField = z.infer<typeof WizardFieldSchema>;
 export type WizardDraft = z.infer<typeof WizardDraftSchema>;
 export type WizardPatch = z.infer<typeof WizardPatchSchema>;
 export type Booking = z.infer<typeof BookingSchema>;
+export type ProviderMatch = z.infer<typeof ProviderMatchSchema>;
+export type BookingPrefill = z.infer<typeof BookingPrefillSchema>;
+export type ProviderOptions = z.infer<typeof ProviderOptionsSchema>;
 export type Reminder = z.infer<typeof ReminderSchema>;
 export type Note = z.infer<typeof NoteSchema>;
 export type ProactiveCard = z.infer<typeof ProactiveCardSchema>;

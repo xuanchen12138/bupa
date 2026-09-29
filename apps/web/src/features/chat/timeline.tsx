@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { useChat, type ChatItem, type ConversationView } from '@/stores/chat';
 import { useNavigation } from '@/stores/navigation';
 import { useWizard } from '@/stores/wizard';
+import { ProviderCards } from './provider-cards';
 
 export function Timeline({
   conversationId,
@@ -252,6 +253,9 @@ function TimelineItem({
         </div>
       );
     }
+
+    case 'providers':
+      return <ProviderCards item={item} />;
 
     case 'receipt':
       return (

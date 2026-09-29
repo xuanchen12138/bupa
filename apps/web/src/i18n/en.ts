@@ -398,6 +398,12 @@ export const en = {
     'Personalisation off. Derived health items were removed; conversations were kept.',
   'personal.countOne': '1 conversation saved',
   'personal.countMany': 'conversations saved',
+  'providers.title': 'Recommended for you',
+  'providers.byDistance': 'ranked by distance',
+  'providers.topPick': 'Top pick',
+  'providers.selected': 'Selected',
+  'providers.choose': 'Choose & prepare booking',
+  'providers.website': 'Website',
   'personal.unavailable': 'Not enabled on this server yet.',
 } as const;
 

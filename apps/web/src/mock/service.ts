@@ -10,7 +10,9 @@ import {
   ScheduleSchema,
   StartSuggestionResponseSchema,
   type Booking,
+  type BookingPrefill,
   type CancelTurnResponse,
+  type ChooseProviderRequest,
   type ChatEvent,
   type ConsentDecision,
   type ConsentRequest,
@@ -30,6 +32,7 @@ import {
   type PermissionPatch,
   type PersonalizationPatch,
   type PreferredTime,
+  type ProviderMatch,
   type PersonalizationSettings,
   type ProfileFieldName,
   type ProfilePatch,
@@ -1242,6 +1245,179 @@ export class MockService {
     return clone(this.state.schedule);
   }
 
+  /**
+   * Explains, per provider, how it matches each preference the member shared. Only shared
+   * preferences are mentioned; a miss is shown as honestly as a hit.
+   */
+  private matchProviders(
+    providers: Provider[],
+    personalisedBy: ProfileFieldName[],
+  ): ProviderMatch[] {
+    const fields = this.state.profile.member.fields;
+    const timeLabel = {
+      morning: { en: 'morning', zh: '上午' },
+      afternoon: { en: 'afternoon', zh: '下午' },
+      evening: { en: 'evening', zh: '晚上' },
+    } as const;
+    const inWindow = (iso: string, pref: string) => {
+      const hour = new Date(iso).getHours();
+      if (pref === 'morning') return hour < 12;
+      if (pref === 'afternoon') return hour >= 12 && hour < 17;
+      if (pref === 'evening') return hour >= 17;
+      return true;
+    };
+    const fmt = (iso: string, lang: 'en' | 'zh') =>
+      new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en-AU', {
+        weekday: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(iso));
+    return providers.map((p) => {
+      const points: ProviderMatch['points'] = [];
+      const pref = fields.preferredTime.value;
+      if (
+        personalisedBy.includes('preferredTime') &&
+        (pref === 'morning' || pref === 'afternoon' || pref === 'evening')
+      ) {
+        const slot = p.slots.find((s) => inWindow(s.startsAt, pref));
+        points.push(
+          slot
+            ? {
+                ok: true,
+                text: {
+                  en: `${timeLabel[pref].en.charAt(0).toUpperCase() + timeLabel[pref].en.slice(1)} slot available: ${fmt(slot.startsAt, 'en')}`,
+                  zh: `有${timeLabel[pref].zh}的号：${fmt(slot.startsAt, 'zh')}`,
+                },
+              }
+            : {
+                ok: false,
+                text: {
+                  en: `No ${timeLabel[pref].en} slot in the next few days`,
+                  zh: `近几天没有${timeLabel[pref].zh}的号`,
+                },
+              },
+        );
+      }
+      if (personalisedBy.includes('travelDuration')) {
+        const limit = Number(fields.travelDuration.value);
+        if (p.travelMinutes == null)
+          points.push({
+            ok: true,
+            text: { en: 'No travel: video consult from home', zh: '无需出门：在家视频问诊' },
+          });
+        else
+          points.push(
+            p.travelMinutes <= limit
+              ? {
+                  ok: true,
+                  text: {
+                    en: `About ${p.travelMinutes} min away, within your ${limit} min limit`,
+                    zh: `路程约 ${p.travelMinutes} 分钟，在你 ${limit} 分钟的上限内`,
+                  },
+                }
+              : {
+                  ok: false,
+                  text: {
+                    en: `About ${p.travelMinutes} min away, over your ${limit} min limit`,
+                    zh: `路程约 ${p.travelMinutes} 分钟，超出你 ${limit} 分钟的上限`,
+                  },
+                },
+          );
+      }
+      if (personalisedBy.includes('preferredLanguage')) {
+        const lang = fields.preferredLanguage.value;
+        const has = p.languages.includes(lang);
+        const name =
+          lang === 'zh-CN' ? { en: 'Mandarin', zh: '中文' } : { en: 'English', zh: '英语' };
+        points.push(
+          has
+            ? {
+                ok: true,
+                text: { en: `${name.en}-speaking GP available`, zh: `有说${name.zh}的 GP` },
+              }
+            : {
+                ok: false,
+                text: {
+                  en: `No ${name.en}-speaking GP; interpreter can be arranged`,
+                  zh: `没有说${name.zh}的 GP，可安排口译`,
+                },
+              },
+        );
+      }
+      if (personalisedBy.includes('consultPreference')) {
+        const want = fields.consultPreference.value;
+        if (want === 'video')
+          points.push(
+            p.telehealth
+              ? {
+                  ok: true,
+                  text: { en: 'Video consult, as you prefer', zh: '视频问诊，符合你的偏好' },
+                }
+              : { ok: false, text: { en: 'In person only', zh: '只能面诊' } },
+          );
+        if (want === 'in_person')
+          points.push(
+            !p.telehealth
+              ? {
+                  ok: true,
+                  text: { en: 'In-person visit, as you prefer', zh: '面诊，符合你的偏好' },
+                }
+              : { ok: false, text: { en: 'Video only', zh: '只有视频问诊' } },
+          );
+      }
+      if (personalisedBy.includes('interpreter') && fields.interpreter.value === 'yes')
+        points.push({
+          ok: true,
+          text: { en: 'Free phone interpreter can be arranged', zh: '可安排免费电话口译' },
+        });
+      return { providerId: p.id, points };
+    });
+  }
+
+  /** The member picked a clinic from the cards: only now is a draft prepared and the wizard opened. */
+  async chooseProvider(conversationId: string, entryId: string, body: ChooseProviderRequest) {
+    await this.begin();
+    const conversation = this.requireConversation(conversationId);
+    const entry = history.getEntry(this.state.history, conversationId, entryId);
+    if (!entry || entry.kind !== 'providers')
+      throw new ApiError('MESSAGE_NOT_FOUND', 'These options are no longer available.', {
+        status: 404,
+      });
+    const existing = entry.draftId
+      ? this.state.schedule.drafts.find((d) => d.id === entry.draftId)
+      : undefined;
+    if (existing && entry.selectedProviderId === body.providerId)
+      return { draft: clone(existing), entry: clone(entry) };
+    const provider = entry.options.providers.find((p) => p.id === body.providerId);
+    if (!provider) throw new ApiError('PROVIDER_NOT_FOUND', 'Unknown clinic', { status: 404 });
+    const slotId = body.slotId ?? provider.slots[0]?.id ?? null;
+    const prefill: BookingPrefill = entry.options.prefill;
+    const draft = this.buildDraft(
+      { ...prefill.fields, providerId: provider.id, slotId },
+      { ...prefill.sources, providerId: 'conversation', slotId: 'conversation' },
+      null,
+      conversationId,
+    );
+    // Replace a draft from an earlier pick rather than leaving two behind.
+    if (existing)
+      this.state.schedule.drafts = this.state.schedule.drafts.filter((d) => d.id !== existing.id);
+    this.state.schedule.drafts.push(draft);
+    conversation.activeDraftId = draft.id;
+    const updated = history.updateEntry<'providers'>(this.state.history, conversationId, entryId, {
+      selectedProviderId: provider.id,
+      draftId: draft.id,
+    });
+    history.appendEntry(
+      this.state.history,
+      conversationId,
+      { kind: 'wizard', turnId: null, draftId: draft.id, mode: 'open', changed: [] },
+      this.stamp(),
+      () => this.nextId('entry'),
+    );
+    await this.commit();
+    return { draft: clone(draft), entry: clone(updated ?? entry) };
+  }
+
   /* ------------------------------------------------------- conversations */
   async conversations(): Promise<ConversationListResponse> {
     await this.begin();
@@ -1514,6 +1690,15 @@ export class MockService {
         case 'receipt':
           entryId = append({ kind: 'receipt', turnId, receiptId: event.receipt.id }).id;
           break;
+        case 'provider_options':
+          entryId = append({
+            kind: 'providers',
+            turnId,
+            options: event.options,
+            selectedProviderId: null,
+            draftId: null,
+          }).id;
+          break;
         case 'wizard_open':
           entryId = append({
             kind: 'wizard',
@@ -1620,6 +1805,18 @@ export class MockService {
       prefillDraft: (id, fields) => this.prefillDraft(id, fields),
       findProviders: (service, postcode, language) =>
         clone(this.searchProviders({ service, postcode, language })),
+      offerProviders: (providers, personalisedBy, prefill) => {
+        emit({
+          type: 'provider_options',
+          id: this.nextId('options'),
+          options: {
+            providers: clone(providers),
+            matches: this.matchProviders(providers, personalisedBy),
+            personalisedBy,
+            prefill,
+          },
+        });
+      },
     };
 
     try {

@@ -107,6 +107,8 @@ type ChatState = {
   load: (id: string, force?: boolean) => Promise<void>;
   send: (text: string, options?: SendOptions) => Promise<void>;
   respondConsent: (id: string, decision: ConsentDecision) => Promise<void>;
+  /** Pick a recommended clinic: the server prepares the draft and the wizard opens. */
+  chooseProvider: (conversationId: string, entryId: string, providerId: string) => Promise<void>;
   cancelRunning: (conversationId?: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   focusEntry: (conversationId: string, entryId: string) => Promise<void>;
@@ -226,6 +228,20 @@ export const useChat = create<ChatState>((set, get) => {
           ],
         }));
         invalidateAll();
+        break;
+      case 'provider_options':
+        update(cid, (view) => ({
+          items: [
+            ...view.items,
+            withOrder(view, {
+              ...base,
+              kind: 'providers' as const,
+              options: event.options,
+              selectedProviderId: null,
+              draftId: null,
+            }),
+          ],
+        }));
         break;
       case 'wizard_open':
         update(cid, (view) => ({
@@ -559,6 +575,38 @@ export const useChat = create<ChatState>((set, get) => {
         }));
       await api.respondConsent(id, decision);
       liveConsents.delete(id);
+      invalidateAll();
+    },
+
+    chooseProvider: async (conversationId, entryId, providerId) => {
+      const { draft, entry } = await api.chooseProvider(conversationId, entryId, {
+        providerId,
+        slotId: null,
+      });
+      update(conversationId, (view) => {
+        const items = view.items.map((item) => (item.id === entryId ? entry : item));
+        const hasWizard = items.some((item) => item.kind === 'wizard' && item.draftId === draft.id);
+        return {
+          items: hasWizard
+            ? items
+            : [
+                ...items,
+                {
+                  kind: 'wizard' as const,
+                  id: `wizard-${draft.id}`,
+                  conversationId,
+                  turnId: null,
+                  order: nextOrder(view),
+                  createdAt: new Date().toISOString(),
+                  draftId: draft.id,
+                  mode: 'open' as const,
+                  changed: [],
+                },
+              ],
+        };
+      });
+      if (get().selectedId === conversationId)
+        useWizard.getState().open(draft.id, 'chat', conversationId);
       invalidateAll();
     },
 

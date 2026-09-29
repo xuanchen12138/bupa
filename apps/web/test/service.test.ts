@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEMO_CONVERSATION_ID } from '@bupa/contracts/fixtures';
 import { ApiError } from '../src/lib/errors.ts';
-import { createService, runTurn, types } from './helpers.ts';
+import { createService, pickFirstProvider, runTurn, types } from './helpers.ts';
 
 test('first initialisation seeds one sample conversation, an enabled preset and a ready overview', async () => {
   const { service } = createService();
@@ -66,7 +66,8 @@ test('a turn persists every displayable event and dedupes the clientMessageId', 
   });
   assert.equal(events[0]?.payload.type, 'turn_accepted');
   assert.ok(types(events).includes('consent_request'));
-  assert.ok(types(events).includes('wizard_open'));
+  assert.ok(types(events).includes('provider_options'));
+  assert.ok(!types(events).includes('wizard_open'), 'no draft until the member picks a clinic');
   assert.equal(events.at(-1)?.payload.type, 'done');
   assert.deepEqual(
     events.map((e) => e.eventIndex),
@@ -74,9 +75,15 @@ test('a turn persists every displayable event and dedupes the clientMessageId', 
     'eventIndex is contiguous',
   );
 
+  const picked = await pickFirstProvider(service, conversation.id, events);
+  assert.equal(
+    picked.entry.kind === 'providers' && picked.entry.selectedProviderId,
+    picked.draft.fields.providerId?.value,
+  );
   const messages = await service.conversationMessages(conversation.id);
   const kinds = messages.items.map((e) => e.kind);
   assert.ok(kinds.includes('consent'));
+  assert.ok(kinds.includes('providers'));
   assert.ok(kinds.includes('wizard'));
   const consent = messages.items.find((e) => e.kind === 'consent');
   assert.equal(consent?.kind === 'consent' && consent.status, 'granted');
@@ -179,9 +186,7 @@ test('preparing a GP booking is idempotent, prefills from the source and links t
     originSuggestionId: first.originSuggestionId,
     onConsent: 'session',
   });
-  const open = events.find((e) => e.payload.type === 'wizard_open');
-  assert.ok(open && open.payload.type === 'wizard_open');
-  const draft = open.payload.draft;
+  const { draft } = await pickFirstProvider(service, first.conversationId, events);
   assert.equal(draft.conversationId, first.conversationId);
   assert.match(String(draft.fields.need?.value), /手臂受伤/);
   assert.equal(draft.fields.need?.source, 'conversation');
@@ -250,10 +255,9 @@ test('deleting the source conversation removes the overview, redacts derived pro
     originSuggestionId: start.originSuggestionId,
     onConsent: 'session',
   });
-  const open = events.find((e) => e.payload.type === 'wizard_open')!;
-  const draft = open.payload.type === 'wizard_open' ? open.payload.draft : null;
-  for (const step of [2, 3, 4, 5]) await service.patchDraft(draft!.id, { step });
-  const { booking } = await service.submitDraft(draft!.id);
+  const { draft } = await pickFirstProvider(service, start.conversationId, events);
+  for (const step of [2, 3, 4, 5]) await service.patchDraft(draft.id, { step });
+  const { booking } = await service.submitDraft(draft.id);
 
   const deleted = await service.deleteConversation(DEMO_CONVERSATION_ID);
   assert.ok(deleted.sourceRevision > overview.sourceRevision);
@@ -276,7 +280,8 @@ test('deleting the source conversation removes the overview, redacts derived pro
 test('deleting a conversation with an unsubmitted draft drops that draft only', async () => {
   const { service } = createService();
   const conversation = await service.createConversation({ requestId: 'd' });
-  await runTurn(service, conversation.id, '我喉咙痛想看医生', { onConsent: 'deny' });
+  const events = await runTurn(service, conversation.id, '我喉咙痛想看医生', { onConsent: 'deny' });
+  await pickFirstProvider(service, conversation.id, events);
   const manual = await service.createDraft();
   let schedule = await service.schedule();
   assert.equal(schedule.drafts.length, 2);
@@ -296,11 +301,12 @@ test('deleting the source clears prefill derived from it in a follow-up draft', 
     requestId: 'p',
     expectedSnapshotRevision: overview.snapshotRevision,
   });
-  await runTurn(service, start.conversationId, start.initialMessage.zh, {
+  const offered = await runTurn(service, start.conversationId, start.initialMessage.zh, {
     clientMessageId: start.clientMessageId,
     originSuggestionId: start.originSuggestionId,
     onConsent: 'deny',
   });
+  await pickFirstProvider(service, start.conversationId, offered);
   let schedule = await service.schedule();
   assert.match(String(schedule.drafts[0]?.fields.need?.value), /手臂/);
   await service.deleteConversation(DEMO_CONVERSATION_ID);
@@ -336,7 +342,10 @@ test('switching personalisation off clears derived data and keeps chats; on agai
 test('an idle session expires on reload: session grants, drafts and pending consents go, always stays', async () => {
   const { service, reload, advance } = createService();
   const conversation = await service.createConversation({ requestId: 's' });
-  await runTurn(service, conversation.id, '我喉咙痛想看医生', { onConsent: 'session' });
+  const events = await runTurn(service, conversation.id, '我喉咙痛想看医生', {
+    onConsent: 'session',
+  });
+  await pickFirstProvider(service, conversation.id, events);
   let profile = await service.profile();
   assert.equal(profile.member.fields.preferredTime.permission, 'session');
   assert.equal(
@@ -421,11 +430,23 @@ test('sharing preferences for 90 days personalises the ranking until the grant r
     'preferred morning slot comes first',
   );
 
-  // The turn's draft was prefilled from the same ranking.
-  const open = events.find((e) => e.payload.type === 'wizard_open');
-  assert.ok(open && open.payload.type === 'wizard_open');
-  assert.equal(open.payload.draft.fields.postcode?.source, 'profile');
-  assert.equal(open.payload.draft.fields.language?.source, 'profile');
+  // The cards explain each match; picking one prefills the draft from the same ranking.
+  const offer = events.find((e) => e.payload.type === 'provider_options');
+  assert.ok(offer && offer.payload.type === 'provider_options');
+  const topMatch = offer.payload.options.matches[0]!;
+  assert.ok(topMatch.points.length >= 3, 'time, travel and language explained');
+  assert.ok(
+    topMatch.points.every((p) => p.ok),
+    'the top pick satisfies every shared preference',
+  );
+  const { draft } = await pickFirstProvider(service, conversation.id, events);
+  assert.equal(draft.fields.postcode?.source, 'profile');
+  assert.equal(draft.fields.language?.source, 'profile');
+  assert.equal(draft.fields.providerId?.value, offer.payload.options.providers[0]!.id);
+  // Picking again the same clinic reuses the draft; nothing is booked.
+  const again = await pickFirstProvider(service, conversation.id, events);
+  assert.equal(again.draft.id, draft.id);
+  assert.equal((await service.schedule()).bookings.length, 0);
 
   advance(91 * 86_400_000);
   const later = reload();
@@ -444,7 +465,10 @@ test('declining the preferences still produces distance-ranked options and a dra
   const { service } = createService();
   const conversation = await service.createConversation({ requestId: 'deny' });
   const events = await runTurn(service, conversation.id, 'I feel sick', { onConsent: 'deny' });
-  assert.ok(types(events).includes('wizard_open'));
+  assert.ok(types(events).includes('provider_options'));
+  const offer = events.find((e) => e.payload.type === 'provider_options');
+  assert.ok(offer && offer.payload.type === 'provider_options');
+  assert.deepEqual(offer.payload.options.personalisedBy, []);
   const profile = await service.profile();
   assert.equal(profile.member.fields.preferredTime.permission, 'off');
   const messages = await service.conversationMessages(conversation.id);

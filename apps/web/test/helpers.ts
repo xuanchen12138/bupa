@@ -57,3 +57,16 @@ export async function runTurn(
 }
 
 export const types = (events: ConversationStreamEvent[]) => events.map((e) => e.payload.type);
+
+/** The member picks the top recommendation from the cards the turn produced. */
+export async function pickFirstProvider(
+  service: MockService,
+  conversationId: string,
+  events: ConversationStreamEvent[],
+) {
+  const offer = events.find((e) => e.payload.type === 'provider_options');
+  if (!offer || offer.payload.type !== 'provider_options' || !offer.entryId)
+    throw new Error('no provider options offered');
+  const providerId = offer.payload.options.providers[0]!.id;
+  return service.chooseProvider(conversationId, offer.entryId, { providerId, slotId: null });
+}

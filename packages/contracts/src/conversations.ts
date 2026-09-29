@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ChatEventSchema } from './core.js';
+import { ChatEventSchema, ProviderOptionsSchema } from './core.js';
 
 /**
  * Persisted conversations (0.3.0).
@@ -84,6 +84,13 @@ export const ConversationEntrySchema = z.discriminatedUnion('kind', [
   }),
   EntryBase.extend({ kind: z.literal('receipt'), receiptId: z.string() }),
   EntryBase.extend({
+    kind: z.literal('providers'),
+    options: ProviderOptionsSchema,
+    /** Set once the member picked one; the draft prepared from that choice. */
+    selectedProviderId: z.string().nullable().default(null),
+    draftId: z.string().nullable().default(null),
+  }),
+  EntryBase.extend({
     kind: z.literal('wizard'),
     draftId: z.string(),
     mode: z.enum(['open', 'update']),
@@ -140,6 +147,11 @@ export const ConversationTurnRequestSchema = z.object({
   originSuggestionId: z.string().nullable().default(null),
 });
 
+export const ChooseProviderRequestSchema = z.object({
+  providerId: z.string(),
+  slotId: z.string().nullable().default(null),
+});
+
 export const CancelTurnResponseSchema = z.object({ turnId: z.string(), status: TurnStatusSchema });
 
 export const TurnAcceptedEventSchema = z.object({
@@ -180,6 +192,7 @@ export type ConversationMessagesResponse = z.infer<typeof ConversationMessagesRe
 export type DeleteConversationResponse = z.infer<typeof DeleteConversationResponseSchema>;
 export type ConversationTurnRequest = z.infer<typeof ConversationTurnRequestSchema>;
 export type CancelTurnResponse = z.infer<typeof CancelTurnResponseSchema>;
+export type ChooseProviderRequest = z.infer<typeof ChooseProviderRequestSchema>;
 export type TurnAcceptedEvent = z.infer<typeof TurnAcceptedEventSchema>;
 export type ConversationStreamEvent = z.infer<typeof ConversationStreamEventSchema>;
 export type ConversationErrorCode = z.infer<typeof ConversationErrorCodeSchema>;

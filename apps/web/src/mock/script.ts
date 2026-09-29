@@ -1,4 +1,5 @@
 import type {
+  BookingPrefill,
   ChatEvent,
   ConsentDecision,
   ConsentRequest,
@@ -49,6 +50,12 @@ export interface ScriptContext {
     postcode: string | null,
     language: string | null,
   ) => { providers: Provider[]; personalisedBy: ProfileFieldName[] };
+  /** Shows recommendation cards; the member's pick creates the draft, not the script. */
+  offerProviders: (
+    providers: Provider[],
+    personalisedBy: ProfileFieldName[],
+    prefill: BookingPrefill,
+  ) => void;
 }
 
 export type Intent =
@@ -352,78 +359,39 @@ export async function runScript(ctx: ScriptContext, userText: string) {
         1300,
       );
       const { providers, personalisedBy } = ctx.findProviders('gp', postcode, null);
-      const first = providers[0];
-      const firstSlot = first?.slots[0];
-      const languageValue =
-        usePreferences && ctx.hasPermission('preferredLanguage')
-          ? ctx.profileValue('preferredLanguage')
-          : lang === 'zh'
-            ? 'zh-CN'
-            : null;
-      const draft = ctx.createDraft(
-        {
+      const languageFromProfile = usePreferences && ctx.hasPermission('preferredLanguage');
+      const languageValue = languageFromProfile
+        ? ctx.profileValue('preferredLanguage')
+        : lang === 'zh'
+          ? 'zh-CN'
+          : null;
+      ctx.offerProviders(providers, personalisedBy, {
+        fields: {
           serviceType: 'gp',
           need,
           acceptTelehealth: true,
           postcode,
-          providerId: first?.id ?? null,
-          slotId: firstSlot?.id ?? null,
           language: languageValue,
           reminder: true,
           reminderLead: '2h',
         },
-        {
+        sources: {
           postcode: 'profile',
-          language:
-            usePreferences && ctx.hasPermission('preferredLanguage') ? 'profile' : 'conversation',
+          language: languageFromProfile ? 'profile' : 'conversation',
         },
-      );
-      ctx.emit({ type: 'wizard_open', draft });
-      await ctx.wait(500);
-
-      const profileNote = pick(
-        lang,
-        '姓名和会员号来自 Bupa 会员资料',
-        'your name and member number from your Bupa membership',
-      );
-      const because: string[] = [];
-      if (personalisedBy.includes('preferredTime') && firstSlot)
-        because.push(
-          pick(
-            lang,
-            `在你偏好的时段有号（${timeLabel(firstSlot.startsAt, lang)}）`,
-            `has a slot in your preferred time (${timeLabel(firstSlot.startsAt, lang)})`,
-          ),
-        );
-      if (personalisedBy.includes('travelDuration') && first?.travelMinutes != null)
-        because.push(
-          pick(
-            lang,
-            `路程约 ${first.travelMinutes} 分钟，在你的上限内`,
-            `about ${first.travelMinutes} min away, within your limit`,
-          ),
-        );
-      if (personalisedBy.includes('preferredLanguage'))
-        because.push(pick(lang, '有说中文的 GP', 'has a Mandarin-speaking GP'));
-      const name = first?.name.replace(' (demo)', '') ?? '';
-      const whenText = firstSlot
-        ? timeLabel(firstSlot.startsAt, lang)
-        : pick(lang, '明天', 'tomorrow');
+      });
+      await ctx.wait(400);
       message(
         ctx,
-        usePreferences && because.length
-          ? `找到了 ${providers.length} 个选项。最推荐 ${name}：${because.join('，')}。最早 ${whenText}，自付约 ${first?.outOfPocket?.max === 0 ? '0' : 'A$20–45'}。\n\n预约向导已在右侧准备好：需求来自我们的对话，${profileNote}，语言和时段来自你分享的偏好，保障信息来自保单。逐步确认即可——我不能替你点“确认预约”。`
-          : `按距离找到了 ${providers.length} 个选项，最推荐 ${name}：${first?.reason[lang] ?? ''}最早 ${whenText}。没有使用你的偏好，你随时可以在 Profile 中开启。\n\n预约向导已在右侧准备好，逐步确认即可——我不能替你点“确认预约”。`,
-        usePreferences && because.length
-          ? `I found ${providers.length} options. Top pick ${name}: ${because.join(', ')}. Earliest ${whenText}, about ${first?.outOfPocket?.max === 0 ? 'no gap' : 'A$20–45'} out of pocket.\n\nThe booking is prepared on the right: your need comes from this chat, ${profileNote}, the language and time from the preferences you shared, and the cover details from your policy. Confirm each step—I cannot press “Confirm booking” for you.`
-          : `Ranked by distance, I found ${providers.length} options; top pick ${name}: ${first?.reason[lang] ?? ''} Earliest ${whenText}. Your preferences were not used—you can turn them on in Profile any time.\n\nThe booking is prepared on the right—confirm each step. I cannot press “Confirm booking” for you.`,
+        usePreferences && personalisedBy.length
+          ? `这是按你的偏好排序的 ${providers.length} 个选项，每张卡片写明了它如何匹配你的偏好。选一家，我就把预约向导准备好——需求来自我们的对话，姓名和会员号来自 Bupa 会员资料，保障信息来自保单；每一步仍由你确认。`
+          : `这是按距离排序的 ${providers.length} 个选项（没有使用你的偏好，你随时可以在 Profile 中开启）。选一家，我就把预约向导准备好，每一步仍由你确认。`,
+        usePreferences && personalisedBy.length
+          ? `Here are ${providers.length} options ranked by your preferences; each card shows how it matches them. Pick one and I will prepare the booking—your need from this chat, your name and member number from your Bupa membership, the cover details from your policy. You still confirm every step.`
+          : `Here are ${providers.length} options ranked by distance (your preferences were not used—you can turn them on in Profile any time). Pick one and I will prepare the booking; you still confirm every step.`,
         {
-          zh: ['改成下午', '我想要视频问诊', '要带什么？'],
-          en: [
-            'Change it to the afternoon',
-            'I would prefer a video consult',
-            'What should I bring?',
-          ],
+          zh: ['我想要视频问诊', '要带什么？'],
+          en: ['I would prefer a video consult', 'What should I bring?'],
         },
       );
       return;

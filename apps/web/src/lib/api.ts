@@ -22,6 +22,7 @@ import {
   StartSuggestionResponseSchema,
   WizardDraftSchema,
   type CancelTurnResponse,
+  type ChooseProviderRequest,
   type ChatEvent,
   type ChatRequest,
   type ConsentDecision,
@@ -134,6 +135,12 @@ export interface Api {
     signal?: AbortSignal,
   ): Promise<void>;
   cancelTurn(conversationId: string, turnId: string): Promise<CancelTurnResponse>;
+  /** The member picked one of the recommended clinics; prepares the draft for that pick. */
+  chooseProvider(
+    conversationId: string,
+    entryId: string,
+    body: ChooseProviderRequest,
+  ): Promise<{ draft: z.infer<typeof WizardDraftSchema>; entry: ConversationEntry }>;
 
   /* 0.3.0 — personalisation */
   personalization(): Promise<PersonalizationSettings>;
@@ -196,6 +203,7 @@ const mockApi: Api = {
   deleteConversation: (id) => mockService.deleteConversation(id),
   sendTurn: (id, request, onEvent, signal) => mockService.sendTurn(id, request, onEvent, signal),
   cancelTurn: (id, turnId) => mockService.cancelTurn(id, turnId),
+  chooseProvider: (id, entryId, body) => mockService.chooseProvider(id, entryId, body),
   personalization: () => mockService.personalization(),
   setPersonalization: (patch) => mockService.setPersonalization(patch),
   healthOverview: () => mockService.healthOverview(),
@@ -386,6 +394,12 @@ const httpApi: Api = {
     request(`/conversations/${id}/turns/${turnId}/cancel`, CancelTurnResponseSchema, {
       method: 'POST',
     }),
+  chooseProvider: (id, entryId, body) =>
+    request(
+      `/conversations/${id}/messages/${entryId}/choose-provider`,
+      z.object({ draft: WizardDraftSchema, entry: ConversationEntrySchema }),
+      json(body),
+    ),
   personalization: () => request('/personalization', PersonalizationSettingsSchema),
   setPersonalization: (patch) =>
     request('/personalization', PersonalizationSettingsSchema, json(patch, 'PATCH')),

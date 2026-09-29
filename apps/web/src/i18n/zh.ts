@@ -375,5 +375,11 @@ export const zh: Dictionary = {
   'personal.disabledToast': '个性化已关闭，派生的健康事项已删除，对话保留。',
   'personal.countOne': '已保存 1 段对话',
   'personal.countMany': '段对话已保存',
+  'providers.title': '为你推荐',
+  'providers.byDistance': '按距离排序',
+  'providers.topPick': '最推荐',
+  'providers.selected': '已选择',
+  'providers.choose': '选这家并准备预约',
+  'providers.website': '网站',
   'personal.unavailable': '服务端尚未启用。',
 };
