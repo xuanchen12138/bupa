@@ -422,7 +422,9 @@ function ConsentHistoryCard({ item }: { item: Extract<ChatItem, { kind: 'consent
     item.status === 'granted'
       ? item.scope === 'always'
         ? t('consent.grantedAlways')
-        : t('consent.grantedOnce')
+        : item.scope === 'days90'
+          ? t('consent.granted90')
+          : t('consent.grantedOnce')
       : item.status === 'denied'
         ? t('consent.denied')
         : t('chat.consentExpired');

@@ -29,6 +29,7 @@ import {
   type Note,
   type PermissionPatch,
   type PersonalizationPatch,
+  type PreferredTime,
   type PersonalizationSettings,
   type ProfileFieldName,
   type ProfilePatch,
@@ -87,6 +88,15 @@ import { detectLang, runScript, type Lang, type ScriptContext } from './script.t
 export type Locale = 'en' | 'zh';
 
 const SESSION_TTL_MS = 30 * 60_000;
+const DAYS_90_MS = 90 * 86_400_000;
+/** Preferences the member set in the product; private until shared for a purpose. */
+export const PREFERENCE_FIELDS: ProfileFieldName[] = [
+  'preferredTime',
+  'travelDuration',
+  'preferredLanguage',
+  'consultPreference',
+  'interpreter',
+];
 
 /** ISO 8601 with local offset and full second precision (fixtures' helper rounds to minutes). */
 function isoWithOffset(date: Date) {
@@ -100,7 +110,6 @@ function isoWithOffset(date: Date) {
     `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
   );
 }
-const nowIso = () => isoWithOffset(new Date());
 const clone = <T>(value: T): T => structuredClone(value);
 
 /* --------------------------------------------------------------- state */
@@ -296,7 +305,34 @@ export class MockService {
     }
     const idle = this.now().getTime() - new Date(this.state.session.lastActiveAt).getTime();
     if (idle > SESSION_TTL_MS) this.expireSession();
+    this.expireTimedGrants();
     void this.persist();
+  }
+
+  /** A 90-day grant that has run out behaves exactly like "off", receipt included. */
+  private expireTimedGrants() {
+    const now = this.now().getTime();
+    for (const [name, field] of Object.entries(this.state.profile.member.fields)) {
+      if (field.permission !== 'days90') continue;
+      if (field.expiresAt && new Date(field.expiresAt).getTime() > now) continue;
+      field.permission = 'off';
+      field.expiresAt = null;
+      for (const receipt of this.state.receipts) {
+        if (
+          receipt.kind === 'data' &&
+          receipt.status === 'active' &&
+          receipt.scope === 'days90' &&
+          receipt.fields.includes(name)
+        )
+          receipt.status = 'revoked';
+      }
+    }
+  }
+
+  private grantUntil(permission: 'session' | 'days90' | 'always') {
+    return permission === 'days90'
+      ? isoWithOffset(new Date(this.now().getTime() + DAYS_90_MS))
+      : null;
   }
 
   private expireSession() {
@@ -318,7 +354,7 @@ export class MockService {
       if (conversation?.activeDraftId === draft.id) conversation.activeDraftId = null;
     }
     this.state.schedule.drafts = [];
-    this.state.session = { id: this.nextId('session'), lastActiveAt: nowIso() };
+    this.state.session = { id: this.nextId('session'), lastActiveAt: this.stamp() };
   }
 
   private seed(locale: Locale): PersistedState {
@@ -368,6 +404,11 @@ export class MockService {
     };
   }
 
+  /** Current time from the injected clock, so tests and the demo anchor agree. */
+  private stamp() {
+    return isoWithOffset(this.now());
+  }
+
   private nextId(prefix: string) {
     this.counter += 1;
     return `${prefix}-${this.counter.toString(36)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -408,7 +449,7 @@ export class MockService {
 
   private async begin() {
     await this.ready();
-    this.state.session.lastActiveAt = nowIso();
+    this.state.session.lastActiveAt = this.stamp();
   }
 
   setLocale(locale: Locale) {
@@ -461,19 +502,57 @@ export class MockService {
   }
   async findProviders(search: ProviderSearch): Promise<ProviderSearchResult> {
     await this.begin();
+    const { providers, personalisedBy } = this.searchProviders(search);
+    return {
+      providers: clone(providers),
+      personalisedBy,
+      rankingNote: {
+        en: 'Ranked by: language match, then distance, then earliest time. Preferences you have shared narrow the times and the trip; Bupa clinics are shown first only when distance, cost and language are similar.',
+        zh: '排序规则：语言匹配 → 距离 → 最早可约时间。你分享的偏好会进一步筛选时段和路程；只有在距离、费用、语言相近时，Bupa 自有服务才会优先显示。',
+      },
+    };
+  }
+
+  /**
+   * Applies the member's preferences only where permission allows, and reports which ones
+   * were used so the UI and the assistant can say so.
+   */
+  private searchProviders(search: {
+    service: string;
+    postcode: string | null;
+    language: string | null;
+    telehealthOnly?: boolean;
+    preferredTime?: PreferredTime | null;
+    maxTravelMinutes?: number | null;
+  }) {
+    const personalisedBy: ProfileFieldName[] = [];
+    const fields = this.state.profile.member.fields;
+    const language =
+      search.language ??
+      (this.permissionAllows('preferredLanguage') ? fields.preferredLanguage.value || null : null);
+    if (!search.language && language) personalisedBy.push('preferredLanguage');
+    let preferredTime = search.preferredTime ?? null;
+    if (!preferredTime && this.permissionAllows('preferredTime')) {
+      const raw = fields.preferredTime.value;
+      if (raw === 'morning' || raw === 'afternoon' || raw === 'evening') preferredTime = raw;
+      if (preferredTime) personalisedBy.push('preferredTime');
+    }
+    let maxTravelMinutes = search.maxTravelMinutes ?? null;
+    if (!maxTravelMinutes && this.permissionAllows('travelDuration')) {
+      const raw = Number(fields.travelDuration.value);
+      if (Number.isFinite(raw) && raw > 0) {
+        maxTravelMinutes = raw;
+        personalisedBy.push('travelDuration');
+      }
+    }
     const providers = this.rankProviders(
       search.service,
       search.postcode,
-      search.language,
-      search.telehealthOnly,
+      language,
+      search.telehealthOnly ?? false,
+      { preferredTime, maxTravelMinutes },
     );
-    return {
-      providers: clone(providers),
-      rankingNote: {
-        en: 'Ranked by: language match, then distance, then earliest time. Bupa clinics are shown first only when distance, cost and language are similar.',
-        zh: '排序规则：语言匹配 → 距离 → 最早可约时间。只有在距离、费用、语言相近时，Bupa 自有服务才会优先显示。',
-      },
-    };
+    return { providers, personalisedBy };
   }
 
   private rankProviders(
@@ -481,6 +560,7 @@ export class MockService {
     postcode: string | null,
     language: string | null,
     telehealthOnly = false,
+    prefs: { preferredTime?: PreferredTime | null; maxTravelMinutes?: number | null } = {},
   ) {
     const wantsTelehealth = service === 'telehealth' || telehealthOnly || !postcode;
     let list = this.providers.filter((p) => {
@@ -490,9 +570,31 @@ export class MockService {
       if (wantsTelehealth && !postcode) return p.telehealth;
       return p.service === 'gp' || p.telehealth;
     });
+    const preferredTime = prefs.preferredTime ?? null;
+    const inWindow = (iso: string) => {
+      if (!preferredTime || preferredTime === 'any') return true;
+      const hour = new Date(iso).getHours();
+      if (preferredTime === 'morning') return hour < 12;
+      if (preferredTime === 'afternoon') return hour >= 12 && hour < 17;
+      return hour >= 17;
+    };
+    // Slots the member prefers come first, so "earliest" means "earliest that suits you".
+    list = list.map((p) => ({
+      ...p,
+      slots: [
+        ...p.slots.filter((s) => inWindow(s.startsAt)),
+        ...p.slots.filter((s) => !inWindow(s.startsAt)),
+      ],
+    }));
     const score = (p: Provider) =>
       (language && p.languages.includes(language) ? 0 : 10) +
       (p.telehealth ? (wantsTelehealth ? 0 : 2) : (p.distanceKm ?? 5)) +
+      (prefs.maxTravelMinutes && p.travelMinutes != null && p.travelMinutes > prefs.maxTravelMinutes
+        ? 6
+        : 0) +
+      (preferredTime && preferredTime !== 'any' && !p.slots.some((s) => inWindow(s.startsAt))
+        ? 3
+        : 0) +
       (p.relationship === 'bupa_owned' ? -0.1 : 0);
     list = [...list].sort((a, b) => score(a) - score(b));
     if (service === 'telehealth')
@@ -518,6 +620,7 @@ export class MockService {
     const previous = target.permission;
     target.permission = permission;
     target.sessionId = permission === 'session' ? this.state.session.id : null;
+    target.expiresAt = permission === 'off' ? null : this.grantUntil(permission);
     if (permission === 'off') {
       this.clearProfileSourcedFields(field);
       for (const receipt of this.state.receipts) {
@@ -537,12 +640,12 @@ export class MockService {
   }
 
   /** Turning a field on in Profile is a grant too, so it gets a receipt like any other. */
-  private pushPermissionReceipt(field: ProfileFieldName, scope: 'session' | 'always') {
+  private pushPermissionReceipt(field: ProfileFieldName, scope: 'session' | 'days90' | 'always') {
     const zh = this.locale === 'zh';
     this.state.receipts.push({
       id: this.nextId('receipt'),
       kind: 'data',
-      createdAt: nowIso(),
+      createdAt: this.stamp(),
       summary: zh ? `在 Profile 中允许 AI 使用：${field}` : `Allowed in Profile: ${field}`,
       purpose: zh
         ? '预填预约向导并个性化推荐'
@@ -556,10 +659,14 @@ export class MockService {
       retention: zh
         ? scope === 'session'
           ? '仅本次会话'
-          : '直到你撤回'
+          : scope === 'days90'
+            ? '90 天，或直到你撤回'
+            : '直到你撤回'
         : scope === 'session'
           ? 'This session only'
-          : 'Until you withdraw it',
+          : scope === 'days90'
+            ? '90 days, or until you withdraw it'
+            : 'Until you withdraw it',
       scope,
       status: 'active',
       fields: [field],
@@ -572,6 +679,10 @@ export class MockService {
     const entry = this.state.profile.member.fields[field];
     if (entry.permission === 'always') return true;
     if (entry.permission === 'session') return entry.sessionId === this.state.session.id;
+    if (entry.permission === 'days90')
+      return (
+        Boolean(entry.expiresAt) && new Date(entry.expiresAt!).getTime() > this.now().getTime()
+      );
     return false;
   }
 
@@ -616,6 +727,7 @@ export class MockService {
           const entry = this.state.profile.member.fields[field];
           entry.permission = decision;
           entry.sessionId = decision === 'session' ? this.state.session.id : null;
+          entry.expiresAt = this.grantUntil(decision);
         } else if (!this.state.sensitiveGrants.includes(field)) {
           this.state.sensitiveGrants.push(field);
         }
@@ -623,7 +735,7 @@ export class MockService {
       this.state.receipts.push({
         id: this.nextId('receipt'),
         kind: 'data',
-        createdAt: nowIso(),
+        createdAt: this.stamp(),
         summary: request.dataLabel,
         purpose: request.purpose,
         benefit: request.benefit,
@@ -657,6 +769,7 @@ export class MockService {
         const entry = this.state.profile.member.fields[field];
         entry.permission = 'off';
         entry.sessionId = null;
+        entry.expiresAt = null;
         this.clearProfileSourcedFields(field);
       } else if (field === 'healthHistory') {
         this.disablePersonalization();
@@ -748,7 +861,7 @@ export class MockService {
         fields[def.id] = { value: null, source: 'user', confirmed: false };
       }
     }
-    const stamp = nowIso();
+    const stamp = this.stamp();
     return {
       id: this.nextId('draft'),
       type: 'booking',
@@ -830,7 +943,7 @@ export class MockService {
       if (patch.step > draft.step && missing.length) throw new ValidationError(missing, draft.step);
       draft.step = patch.step;
     }
-    draft.updatedAt = nowIso();
+    draft.updatedAt = this.stamp();
     await this.commit();
     return clone(draft);
   }
@@ -851,7 +964,7 @@ export class MockService {
       changed.push(key);
       if (key === 'serviceType' && typeof value === 'string') this.applyCover(draft, value);
     }
-    draft.updatedAt = nowIso();
+    draft.updatedAt = this.stamp();
     void this.commit();
     return { draft: clone(draft), changed };
   }
@@ -928,7 +1041,7 @@ export class MockService {
         .map((s) => s.trim())
         .filter(Boolean),
       status: 'confirmed',
-      createdAt: nowIso(),
+      createdAt: this.stamp(),
       demo: true,
     };
     if (draft.rescheduleOf) this.cancelInternal(draft.rescheduleOf, true);
@@ -957,7 +1070,7 @@ export class MockService {
     const receipt: Receipt = {
       id: this.nextId('receipt'),
       kind: 'action',
-      createdAt: nowIso(),
+      createdAt: this.stamp(),
       summary: zh ? `预约：${provider.name}` : `Booking: ${provider.name}`,
       purpose: zh
         ? '按你在向导中确认的内容创建预约'
@@ -985,7 +1098,7 @@ export class MockService {
       ? this.state.history.conversations[conversationId]
       : undefined;
     if (conversation && !history.isDeleted(this.state.history, conversation.id)) {
-      const stamp = nowIso();
+      const stamp = this.stamp();
       history.appendEntry(
         this.state.history,
         conversation.id,
@@ -1052,7 +1165,7 @@ export class MockService {
             this.clearSelection(draft);
             draft.step = Math.min(draft.step, 3);
           }
-          draft.updatedAt = nowIso();
+          draft.updatedAt = this.stamp();
         }
       }
     }
@@ -1070,7 +1183,7 @@ export class MockService {
     this.state.receipts.push({
       id: this.nextId('receipt'),
       kind: 'action',
-      createdAt: nowIso(),
+      createdAt: this.stamp(),
       summary:
         (zh ? (rescheduled ? '改期：' : '取消：') : rescheduled ? 'Rescheduled: ' : 'Cancelled: ') +
         booking.provider.name,
@@ -1140,7 +1253,7 @@ export class MockService {
     const conversation = history.createConversation(this.state.history, {
       id: this.nextId('conv'),
       requestId: input.requestId,
-      now: nowIso(),
+      now: this.stamp(),
     });
     await this.commit();
     return clone(conversation);
@@ -1289,13 +1402,13 @@ export class MockService {
         conversationId,
         turnId,
         eventIndex: eventIndex++,
-        at: nowIso(),
+        at: this.stamp(),
         entryId,
         payload,
       });
     };
     const append = (input: Parameters<typeof history.appendEntry>[2]) =>
-      history.appendEntry(this.state.history, conversationId, input, nowIso(), () =>
+      history.appendEntry(this.state.history, conversationId, input, this.stamp(), () =>
         this.nextId('entry'),
       );
 
@@ -1489,6 +1602,7 @@ export class MockService {
       },
       hasPermission: (field) => this.permissionAllows(field),
       profileValue: (field) => this.state.profile.member.fields[field].value || null,
+      preferenceFields: PREFERENCE_FIELDS,
       openDraft: () => {
         const draft = request.openDraftId
           ? this.state.schedule.drafts.find((d) => d.id === request.openDraftId)
@@ -1505,7 +1619,7 @@ export class MockService {
       },
       prefillDraft: (id, fields) => this.prefillDraft(id, fields),
       findProviders: (service, postcode, language) =>
-        clone(this.rankProviders(service, postcode, language)),
+        clone(this.searchProviders({ service, postcode, language })),
     };
 
     try {
@@ -1553,7 +1667,7 @@ export class MockService {
       const receipt: Receipt = {
         id: this.nextId('receipt'),
         kind: 'data',
-        createdAt: nowIso(),
+        createdAt: this.stamp(),
         summary: copy.summary,
         purpose: copy.purpose,
         benefit: copy.benefit,
@@ -1569,7 +1683,7 @@ export class MockService {
       p.enabled = true;
       p.receiptId = receipt.id;
       p.presetByDemo = false;
-      p.updatedAt = nowIso();
+      p.updatedAt = this.stamp();
       p.sourceRevision += 1;
       p.cache = null;
     } else if (!patch.enabled && p.enabled) {
@@ -1583,7 +1697,7 @@ export class MockService {
   private disablePersonalization() {
     const p = this.state.personalization;
     p.enabled = false;
-    p.updatedAt = nowIso();
+    p.updatedAt = this.stamp();
     p.sourceRevision += 1;
     p.snapshotRevision += 1;
     p.cache = null;
@@ -1600,7 +1714,7 @@ export class MockService {
     if (!p.cache || p.cache.sourceRevision !== p.sourceRevision) {
       p.cache = {
         sourceRevision: p.sourceRevision,
-        generatedAt: nowIso(),
+        generatedAt: this.stamp(),
         facts: factsFromHistory(this.state.history, this.now()),
       };
       p.snapshotRevision += 1;
@@ -1689,7 +1803,7 @@ export class MockService {
     await this.begin();
     this.requireSuggestion(id, body.expectedSnapshotRevision);
     const record = this.suggestionRecord(id);
-    record.dismissedAt = nowIso();
+    record.dismissedAt = this.stamp();
     this.state.personalization.snapshotRevision += 1;
     await this.commit();
     return clone(this.overview());
@@ -1728,7 +1842,7 @@ export class MockService {
       history.createConversation(this.state.history, {
         id: this.nextId('conv'),
         requestId: `start-${id}-${record.startCount}`,
-        now: nowIso(),
+        now: this.stamp(),
         originSuggestionId: id,
         title: TEXT.followUpTitle[this.locale],
       });

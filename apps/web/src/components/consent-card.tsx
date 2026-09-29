@@ -1,4 +1,4 @@
-import { Check, Clock3, Database, Gift, Lock, ShieldCheck, Target, X } from 'lucide-react';
+import { Check, Database, Gift, ShieldCheck, Target, X } from 'lucide-react';
 import type { ConsentDecision, ConsentRequest } from '@bupa/contracts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/primitives';
@@ -23,17 +23,11 @@ export function ConsentCard({
   const { t } = useT();
   const decided = decision !== null;
   const sensitive = request.sensitive;
+  // Three things the member needs to decide: what, why, and what they get in return.
   const rows: Array<{ icon: typeof Database; label: string; value: string; tone?: 'muted' }> = [
     { icon: Database, label: t('consent.data'), value: request.dataLabel },
     { icon: Target, label: t('consent.purpose'), value: request.purpose },
     { icon: Gift, label: t('consent.benefit'), value: request.benefit },
-    {
-      icon: Lock,
-      label: t('consent.excluded'),
-      value: request.excludedUses.join(' · '),
-      tone: 'muted',
-    },
-    { icon: Clock3, label: t('consent.retention'), value: request.retention, tone: 'muted' },
   ];
 
   return (
@@ -67,7 +61,9 @@ export function ConsentCard({
               ? t('consent.denied')
               : decision === 'always'
                 ? t('consent.grantedAlways')
-                : t('consent.grantedOnce')}
+                : decision === 'days90'
+                  ? t('consent.granted90')
+                  : t('consent.grantedOnce')}
           </Badge>
         ) : (
           <Badge tone="warning" className="ml-auto animate-pulse-soft">
@@ -110,8 +106,13 @@ export function ConsentCard({
           <Button size="sm" disabled={busy} onClick={() => onDecide('session')}>
             {t('consent.allowOnce')}
           </Button>
+          {request.allowedScopes.includes('days90') ? (
+            <Button size="sm" variant="soft" disabled={busy} onClick={() => onDecide('days90')}>
+              {t('consent.share90')}
+            </Button>
+          ) : null}
           {request.allowedScopes.includes('always') ? (
-            <Button size="sm" variant="soft" disabled={busy} onClick={() => onDecide('always')}>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => onDecide('always')}>
               {t('consent.allowAlways')}
             </Button>
           ) : null}

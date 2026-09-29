@@ -338,18 +338,23 @@ test('an idle session expires on reload: session grants, drafts and pending cons
   const conversation = await service.createConversation({ requestId: 's' });
   await runTurn(service, conversation.id, '我喉咙痛想看医生', { onConsent: 'session' });
   let profile = await service.profile();
-  assert.equal(profile.member.fields.postcode.permission, 'session');
+  assert.equal(profile.member.fields.preferredTime.permission, 'session');
+  assert.equal(
+    profile.member.fields.postcode.permission,
+    'always',
+    'membership data needs no grant',
+  );
   await service.setPermission({ field: 'preferredLanguage', permission: 'always' });
 
   advance(31 * 60_000);
   const again = reload();
   profile = await again.profile();
-  assert.equal(profile.member.fields.postcode.permission, 'off');
+  assert.equal(profile.member.fields.preferredTime.permission, 'off');
   assert.equal(profile.member.fields.preferredLanguage.permission, 'always');
   const schedule = await again.schedule();
   assert.equal(schedule.drafts.length, 0);
   const receipts = await again.receipts();
-  assert.equal(receipts.find((r) => r.fields.includes('postcode'))?.status, 'revoked');
+  assert.equal(receipts.find((r) => r.fields.includes('preferredTime'))?.status, 'revoked');
   const messages = await again.conversationMessages(conversation.id);
   const wizard = messages.items.find((e) => e.kind === 'wizard');
   assert.ok(wizard, 'the history still shows that a booking was prepared');
@@ -381,4 +386,68 @@ test('reset re-seeds the sample and clears everything else', async () => {
   );
   assert.equal(list.items[0]?.title, 'Arm injury');
   assert.equal((await service.healthOverview()).status, 'ready');
+});
+
+test('sharing preferences for 90 days personalises the ranking until the grant runs out', async () => {
+  const { service, reload, advance } = createService();
+  const conversation = await service.createConversation({ requestId: 'p90' });
+  const events = await runTurn(service, conversation.id, '我感冒了，想看医生', {
+    onConsent: 'days90',
+  });
+  const consent = events.find((e) => e.payload.type === 'consent_request');
+  assert.ok(consent && consent.payload.type === 'consent_request');
+  assert.deepEqual(consent.payload.request.allowedScopes, ['session', 'days90', 'always']);
+  assert.ok(consent.payload.request.fields.includes('preferredTime'));
+  assert.ok(!consent.payload.request.fields.includes('postcode'), 'Bupa already has the postcode');
+
+  let profile = await service.profile();
+  assert.equal(profile.member.fields.preferredTime.permission, 'days90');
+  assert.ok(profile.member.fields.preferredTime.expiresAt);
+  const receipts = await service.receipts();
+  assert.equal(receipts.find((r) => r.fields.includes('preferredTime'))?.scope, 'days90');
+
+  // Ranking used the shared preferences: a morning slot first, trip within 30 minutes.
+  const search = await service.findProviders({
+    service: 'gp',
+    postcode: '3053',
+    language: null,
+    telehealthOnly: false,
+  });
+  assert.ok(search.personalisedBy?.includes('preferredTime'));
+  assert.ok(search.personalisedBy?.includes('travelDuration'));
+  const first = search.providers[0]!;
+  assert.ok(
+    new Date(first.slots[0]!.startsAt).getHours() < 12,
+    'preferred morning slot comes first',
+  );
+
+  // The turn's draft was prefilled from the same ranking.
+  const open = events.find((e) => e.payload.type === 'wizard_open');
+  assert.ok(open && open.payload.type === 'wizard_open');
+  assert.equal(open.payload.draft.fields.postcode?.source, 'profile');
+  assert.equal(open.payload.draft.fields.language?.source, 'profile');
+
+  advance(91 * 86_400_000);
+  const later = reload();
+  profile = await later.profile();
+  assert.equal(profile.member.fields.preferredTime.permission, 'off', 'expired after 90 days');
+  const after = await later.findProviders({
+    service: 'gp',
+    postcode: '3053',
+    language: null,
+    telehealthOnly: false,
+  });
+  assert.deepEqual(after.personalisedBy ?? [], []);
+});
+
+test('declining the preferences still produces distance-ranked options and a draft', async () => {
+  const { service } = createService();
+  const conversation = await service.createConversation({ requestId: 'deny' });
+  const events = await runTurn(service, conversation.id, 'I feel sick', { onConsent: 'deny' });
+  assert.ok(types(events).includes('wizard_open'));
+  const profile = await service.profile();
+  assert.equal(profile.member.fields.preferredTime.permission, 'off');
+  const messages = await service.conversationMessages(conversation.id);
+  const consent = messages.items.find((e) => e.kind === 'consent');
+  assert.equal(consent?.kind === 'consent' && consent.status, 'denied');
 });

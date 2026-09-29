@@ -22,19 +22,22 @@ export const demoProfile = ProfileResponseSchema.parse({
     memberSince: '2026-09-07',
     demo: true,
     fields: {
-      // Existing membership data: reasonable expectation for member service, on by default.
+      // Membership data Bupa already holds: shown for transparency and used for member service
+      // (identifying the member, finding care near their address). No per-field switch.
       name: { value: 'Lin Zhao', permission: 'always', sessionId: null },
-      dateOfBirth: { value: '2002-05-18', permission: 'off', sessionId: null },
+      dateOfBirth: { value: '2002-05-18', permission: 'always', sessionId: null },
       memberNumber: { value: 'DEMO-4D-000123', permission: 'always', sessionId: null },
       phone: { value: '04xx xxx 123', permission: 'always', sessionId: null },
-      email: { value: 'lin@example.invalid', permission: 'off', sessionId: null },
-      address: { value: '12 Demo St, Carlton VIC', permission: 'off', sessionId: null },
-      emergencyContact: { value: 'Mum · +86 1xx xxxx', permission: 'off', sessionId: null },
-      // Voluntary data: off until Lin grants it for a purpose.
-      postcode: { value: '3053', permission: 'off', sessionId: null },
+      email: { value: 'lin@example.invalid', permission: 'always', sessionId: null },
+      address: { value: '12 Demo St, Carlton VIC', permission: 'always', sessionId: null },
+      postcode: { value: '3053', permission: 'always', sessionId: null },
+      emergencyContact: { value: 'Mum · +86 1xx xxxx', permission: 'always', sessionId: null },
+      // Preferences Lin set in the product: private until she shares them for a purpose.
       preferredLanguage: { value: 'zh-CN', permission: 'off', sessionId: null },
-      interpreter: { value: 'no', permission: 'off', sessionId: null },
+      preferredTime: { value: 'morning', permission: 'off', sessionId: null },
+      travelDuration: { value: '30', permission: 'off', sessionId: null },
       consultPreference: { value: 'either', permission: 'off', sessionId: null },
+      interpreter: { value: 'no', permission: 'off', sessionId: null },
       reminderChannel: { value: 'push', permission: 'always', sessionId: null },
       needCategory: { value: '', permission: 'off', sessionId: null },
     },
@@ -211,6 +214,7 @@ export function demoProviders(now = new Date()): Provider[] {
       address: '5 Demo Lane, Carlton VIC 3053',
       suburb: 'Carlton',
       distanceKm: 0.6,
+      travelMinutes: 8,
       languages: ['en', 'zh-CN'],
       relationship: 'partner',
       telehealth: false,
@@ -237,6 +241,7 @@ export function demoProviders(now = new Date()): Provider[] {
       address: '33 Demo St, Melbourne VIC 3000',
       suburb: 'Melbourne',
       distanceKm: 1.8,
+      travelMinutes: 22,
       languages: ['en', 'zh-CN', 'vi'],
       relationship: 'bupa_owned',
       telehealth: false,

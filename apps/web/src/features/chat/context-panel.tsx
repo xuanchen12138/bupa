@@ -19,9 +19,9 @@ import { useNavigation } from '@/stores/navigation';
 import { useWizard } from '@/stores/wizard';
 
 const watched: ProfileFieldName[] = [
-  'postcode',
+  'preferredTime',
+  'travelDuration',
   'preferredLanguage',
-  'interpreter',
   'consultPreference',
 ];
 

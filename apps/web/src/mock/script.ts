@@ -3,6 +3,7 @@ import type {
   ConsentDecision,
   ConsentRequest,
   FieldSource,
+  ProfileFieldName,
   Provider,
   SourceRef,
   WizardDraft,
@@ -25,11 +26,11 @@ export interface ScriptContext {
   requestConsent: (
     input: Omit<ConsentRequest, 'id' | 'sessionId' | 'status'>,
   ) => Promise<ConsentDecision>;
-  hasPermission: (
-    field: 'postcode' | 'preferredLanguage' | 'interpreter' | 'name' | 'memberNumber',
-  ) => boolean;
-  /** Profile value the script may use once permission is granted. */
-  profileValue: (field: 'postcode') => string | null;
+  hasPermission: (field: ProfileFieldName) => boolean;
+  /** Profile value the script may use (membership data, or a preference once permitted). */
+  profileValue: (field: ProfileFieldName) => string | null;
+  /** Preference fields that one consent card covers together. */
+  preferenceFields: ProfileFieldName[];
   /** Health messages this turn was started from (a Dashboard suggestion), else empty. */
   sourceRefs: SourceRef[];
   /** True when this conversation currently supports a health-overview item. */
@@ -43,7 +44,11 @@ export interface ScriptContext {
     id: string,
     fields: Record<string, WizardFieldValue>,
   ) => { draft: WizardDraft; changed: string[] };
-  findProviders: (service: string, postcode: string | null, language: string | null) => Provider[];
+  findProviders: (
+    service: string,
+    postcode: string | null,
+    language: string | null,
+  ) => { providers: Provider[]; personalisedBy: ProfileFieldName[] };
 }
 
 export type Intent =
@@ -241,14 +246,8 @@ export async function runScript(ctx: ScriptContext, userText: string) {
 
     case 'gp': {
       await tool(ctx, 'safety_check', '安全检查', 'Safety check', 400);
-      await tool(ctx, 'get_cover', '正在读取你的保单', 'Reading your cover', 1100);
-      message(
-        ctx,
-        '先说结论：看 GP（全科医生）在你的 Bupa OSHC 保障范围内。\n\n• 标准门诊按 MBS（Medicare Benefits Schedule，政府医疗费用基准）的 100% 报销\n• 如果诊所收费高于 MBS，差额需要自付，通常在 A$0–45 之间；Bupa 自有诊所和 Blua 视频问诊没有自付\n• 没有等待期（waiting period）\n\n出处：OSHC 保障摘要 §2.1 门诊医疗（演示数据）。费用为估算，以实际理赔为准。',
-        'Short answer: seeing a GP (general practitioner) is covered by your Bupa OSHC.\n\n• Standard consultations are paid at 100% of the MBS fee (Medicare Benefits Schedule, the government benchmark)\n• If a clinic charges above the MBS fee you pay the gap, usually A$0–45; Bupa clinics and Blua video GPs have no gap\n• No waiting period applies\n\nSource: OSHC Cover Summary §2.1 Out-of-hospital medical (demo data). Estimate only—the actual benefit depends on the claim.',
-      );
-      await ctx.wait(900);
 
+      // 1. Which door: recommend the GP (never a diagnosis).
       const sourceDate = sourceDateLabel(ctx);
       const need =
         topic === 'arm'
@@ -262,52 +261,69 @@ export async function runScript(ctx: ScriptContext, userText: string) {
           : topic === 'throat'
             ? pick(lang, '喉咙痛、低烧两天', 'Sore throat and low fever for two days')
             : userText.trim().slice(0, 80);
-      const intro =
+      message(
+        ctx,
         topic === 'arm'
-          ? pick(
-              lang,
-              `${sourceDate ? `关于你在 ${sourceDate} 提到的手臂受伤：` : ''}GP 可以检查手臂的恢复情况，并在需要时转介拍 X 光或物理治疗；如果出现剧痛、变形或麻木，请直接去急诊。我可以帮你找附近能说中文的 GP，并把预约准备好，你只需要确认。`,
-              `${sourceDate ? `About the arm injury you mentioned on ${sourceDate}: ` : ''}a GP can examine how the arm is recovering and refer you for an X-ray or physio if needed; severe pain, deformity or numbness means the emergency department instead. I can find a Mandarin-speaking GP near you and prepare the booking—you only need to confirm.`,
-            )
+          ? `${sourceDate ? `关于你在 ${sourceDate} 提到的手臂受伤：` : ''}建议看 GP（全科医生）。GP 可以检查手臂的恢复情况，并在需要时转介拍 X 光或物理治疗；如果出现剧痛、变形或麻木，请直接去急诊或拨打 000。`
           : topic === 'throat'
-            ? pick(
-                lang,
-                '喉咙痛和低烧通常先看 GP 就可以，不需要去急诊。我可以帮你找附近能说中文的 GP，并把预约准备好，你只需要确认。',
-                'A sore throat and low fever are usually a GP visit, not the emergency department. I can find a Mandarin-speaking GP near you and prepare the booking—you only need to confirm.',
-              )
-            : pick(
-                lang,
-                '这类情况通常先看 GP。我可以帮你找附近能说中文的 GP，并把预约准备好，你只需要确认。',
-                'This is usually a GP visit. I can find a Mandarin-speaking GP near you and prepare the booking—you only need to confirm.',
-              );
+            ? '喉咙痛和低烧通常先看 GP（全科医生）就可以，不需要去急诊。GP 会检查并在需要时开药或转介。'
+            : '这类情况建议先看 GP（全科医生），不需要去急诊。GP 会检查并在需要时开药或转介；如果出现胸痛、呼吸困难等紧急情况，请拨打 000。',
+        topic === 'arm'
+          ? `${sourceDate ? `About the arm injury you mentioned on ${sourceDate}: ` : ''}I recommend a GP (general practitioner). They can examine how the arm is recovering and refer you for an X-ray or physio if needed; severe pain, deformity or numbness means the emergency department or 000 instead.`
+          : topic === 'throat'
+            ? 'A sore throat and low fever are usually a GP (general practitioner) visit, not the emergency department. The GP will examine you and prescribe or refer if needed.'
+            : 'For this I recommend a GP (general practitioner) rather than the emergency department. The GP will examine you and prescribe or refer if needed; chest pain or trouble breathing means 000.',
+      );
+      await ctx.wait(600);
 
-      let postcode: string | null = null;
-      if (ctx.hasPermission('postcode')) {
-        postcode = ctx.profileValue('postcode');
+      // 2. What it costs, from data Bupa already holds (the policy).
+      await tool(
+        ctx,
+        'get_cover',
+        '正在用你的保单估算费用',
+        'Estimating your cost from your cover',
+        1100,
+      );
+      message(
+        ctx,
+        '根据 Bupa 已有的保单信息估算：\n\n• 你的 OSHC 包含 GP 门诊，按 MBS（Medicare Benefits Schedule，政府医疗费用基准）的 100% 报销\n• 如果诊所收费高于 MBS，差额需要自付，通常在 A$0–45 之间；Bupa 自有诊所和 Blua 视频问诊没有自付\n• 没有等待期（waiting period）\n\n出处：OSHC 保障摘要 §2.1 门诊医疗（演示数据）。费用为估算，以实际理赔为准。',
+        'Estimated from the policy Bupa already holds for you:\n\n• Your OSHC includes GP visits, paid at 100% of the MBS fee (Medicare Benefits Schedule, the government benchmark)\n• If a clinic charges above the MBS fee you pay the gap, usually A$0–45; Bupa clinics and Blua video GPs have no gap\n• No waiting period applies\n\nSource: OSHC Cover Summary §2.1 Out-of-hospital medical (demo data). Estimate only—the actual benefit depends on the claim.',
+      );
+      await ctx.wait(700);
+
+      // 3. Bupa has the address; the preferences are the member's to share.
+      const postcode = ctx.profileValue('postcode');
+      const prefsAlreadyShared = ctx.preferenceFields.some((field) => ctx.hasPermission(field));
+      let usePreferences = prefsAlreadyShared;
+      if (prefsAlreadyShared) {
         message(
           ctx,
-          `${intro}\n\n你已允许我使用邮编查找附近诊所。`,
-          `${intro}\n\nYou already allow me to use your postcode to search nearby.`,
+          `Bupa 已有你的邮编（${postcode ?? '—'}），我可以直接查附近的诊所。你之前已允许我使用 Profile 里的偏好，我会按你的偏好来排序。`,
+          `Bupa already has your postcode (${postcode ?? '—'}), so I can search nearby right away. You have already let me use the preferences in your profile, so I will rank by them.`,
         );
       } else {
         message(
           ctx,
-          `${intro}\n\n这一步需要用你的邮编来搜索附近诊所：`,
-          `${intro}\n\nTo search nearby I would need to use your postcode:`,
+          `Bupa 已有你的邮编（${postcode ?? '—'}），我可以直接查附近的诊所。要不要也用你在 Profile 里预设的偏好——就诊时间、语言、可接受的路程——来排序推荐？`,
+          `Bupa already has your postcode (${postcode ?? '—'}), so I can search nearby right away. Would you also like me to use the preferences you set in your profile—preferred time, language and how far you are happy to travel—to rank the options?`,
         );
         const decision = await ctx.requestConsent({
-          fields: ['postcode'],
+          fields: [...ctx.preferenceFields],
           sensitive: false,
-          dataLabel: pick(lang, '邮编（来自你的 Profile）', 'Postcode (from your profile)'),
+          dataLabel: pick(
+            lang,
+            'Profile 中的偏好：就诊时间、语言、路程、就诊方式、口译',
+            'Your profile preferences: preferred time, language, travel time, visit type, interpreter',
+          ),
           purpose: pick(
             lang,
-            '搜索你附近的 GP 诊所并按距离排序',
-            'Search GP clinics near you and rank them by distance',
+            '按你的偏好排序诊所和时段',
+            'Rank clinics and appointment times to match how you like to see a doctor',
           ),
           benefit: pick(
             lang,
-            '3 家附近、能说中文的诊所推荐，附自付估算和最早可约时间',
-            '3 nearby Mandarin-speaking clinics with an out-of-pocket estimate and the earliest time',
+            '更合适的时间、更近的诊所，用你的语言',
+            'Times that suit you, a shorter trip, in your language',
           ),
           excludedUses: pick(
             lang,
@@ -316,81 +332,100 @@ export async function runScript(ctx: ScriptContext, userText: string) {
           ),
           retention: pick(
             lang,
-            '仅本次：会话结束后删除 · 始终允许：直到你撤回',
-            'This time: deleted when the session ends · Always: until you withdraw it',
+            '仅本次：会话结束后失效 · 90 天：到期自动失效 · 始终：直到你撤回',
+            'Once: ends with this session · 90 days: expires by itself · Always: until you withdraw it',
           ),
-          allowedScopes: ['session', 'always'],
-          wizardFieldId: 'postcode',
+          allowedScopes: ['session', 'days90', 'always'],
+          wizardFieldId: null,
         });
-        if (decision !== 'deny') postcode = ctx.profileValue('postcode');
+        usePreferences = decision !== 'deny';
       }
+
+      // 4. Rank—with or without the preferences—and prepare the booking.
+      await tool(
+        ctx,
+        'find_providers',
+        usePreferences ? '正在按你的偏好查找诊所' : '正在按距离查找附近诊所',
+        usePreferences
+          ? 'Finding clinics that match your preferences'
+          : 'Finding clinics near you by distance',
+        1300,
+      );
+      const { providers, personalisedBy } = ctx.findProviders('gp', postcode, null);
+      const first = providers[0];
+      const firstSlot = first?.slots[0];
+      const languageValue =
+        usePreferences && ctx.hasPermission('preferredLanguage')
+          ? ctx.profileValue('preferredLanguage')
+          : lang === 'zh'
+            ? 'zh-CN'
+            : null;
+      const draft = ctx.createDraft(
+        {
+          serviceType: 'gp',
+          need,
+          acceptTelehealth: true,
+          postcode,
+          providerId: first?.id ?? null,
+          slotId: firstSlot?.id ?? null,
+          language: languageValue,
+          reminder: true,
+          reminderLead: '2h',
+        },
+        {
+          postcode: 'profile',
+          language:
+            usePreferences && ctx.hasPermission('preferredLanguage') ? 'profile' : 'conversation',
+        },
+      );
+      ctx.emit({ type: 'wizard_open', draft });
+      await ctx.wait(500);
 
       const profileNote = pick(
         lang,
-        ctx.hasPermission('name') && ctx.hasPermission('memberNumber')
-          ? '姓名和会员号来自你的 Profile（你已允许）'
-          : '姓名和会员号需要你在向导里确认或授权',
-        ctx.hasPermission('name') && ctx.hasPermission('memberNumber')
-          ? 'your name and member number from your profile (which you allow)'
-          : 'your name and member number need your confirmation or permission in the wizard',
+        '姓名和会员号来自 Bupa 会员资料',
+        'your name and member number from your Bupa membership',
       );
-      const basePrefill = {
-        serviceType: 'gp',
-        need,
-        acceptTelehealth: true,
-        language: 'zh-CN',
-        reminder: true,
-        reminderLead: '2h',
-      };
-
-      if (postcode) {
-        await tool(ctx, 'find_providers', '正在查找附近的诊所', 'Finding clinics near you', 1300);
-        const providers = ctx.findProviders('gp', postcode, 'zh-CN');
-        const first = providers[0];
-        const draft = ctx.createDraft(
-          {
-            ...basePrefill,
-            postcode,
-            providerId: first?.id ?? null,
-            slotId: first?.slots[0]?.id ?? null,
-          },
-          { postcode: 'profile' },
+      const because: string[] = [];
+      if (personalisedBy.includes('preferredTime') && firstSlot)
+        because.push(
+          pick(
+            lang,
+            `在你偏好的时段有号（${timeLabel(firstSlot.startsAt, lang)}）`,
+            `has a slot in your preferred time (${timeLabel(firstSlot.startsAt, lang)})`,
+          ),
         );
-        ctx.emit({ type: 'wizard_open', draft });
-        await ctx.wait(500);
-        message(
-          ctx,
-          `找到了 3 个选项。最推荐 Carlton Family Medical：离你 600 米，周二、周四有说中文的 GP，最早${first?.slots[0] ? timeLabel(first.slots[0].startsAt, lang) : '明天'}就能约，自付大约 A$20–45。想更快的话，Blua 视频问诊约 40 分钟后就能见到说中文的医生，而且没有自付。\n\n预约向导已经在右侧准备好：需求来自我们的对话，${profileNote}，保障信息来自保单。逐步确认就可以——我不能替你点“确认预约”。`,
-          `I found 3 options. My top pick is Carlton Family Medical: 600 m away, Mandarin-speaking GP on Tuesday and Thursday, earliest ${first?.slots[0] ? timeLabel(first.slots[0].startsAt, lang) : 'tomorrow'}, about A$20–45 out of pocket. If sooner matters more, a Blua video GP who speaks Mandarin is available in about 40 minutes with no gap.\n\nThe booking is prepared on the right: your need comes from this chat, ${profileNote}, and the cover details from your policy. Confirm each step—I cannot press “Confirm booking” for you.`,
-          {
-            zh: ['改成下午', '我想要视频问诊', '要带什么？'],
-            en: [
-              'Change it to the afternoon',
-              'I would prefer a video consult',
-              'What should I bring?',
-            ],
-          },
+      if (personalisedBy.includes('travelDuration') && first?.travelMinutes != null)
+        because.push(
+          pick(
+            lang,
+            `路程约 ${first.travelMinutes} 分钟，在你的上限内`,
+            `about ${first.travelMinutes} min away, within your limit`,
+          ),
         );
-      } else {
-        const providers = ctx.findProviders('gp', null, 'zh-CN');
-        const first = providers[0];
-        const draft = ctx.createDraft({
-          ...basePrefill,
-          providerId: first?.id ?? null,
-          slotId: first?.slots[0]?.id ?? null,
-        });
-        ctx.emit({ type: 'wizard_open', draft });
-        await ctx.wait(400);
-        message(
-          ctx,
-          `没问题，不用邮编也可以。我推荐不需要地址的 Blua 视频问诊：说中文的 GP，约 40 分钟后就能见到，没有自付。${topic === 'arm' ? '视频医生会先看伤处并判断是否需要面诊。' : ''}如果你更想面诊，可以在向导里手动填一个大概的区域，我再帮你找。\n\n预约向导已在右侧准备好，逐步确认即可。`,
-          `No problem, we can continue without it. I recommend a Blua video GP, which needs no address: a Mandarin-speaking doctor in about 40 minutes with no gap.${topic === 'arm' ? ' The video doctor will look at the arm first and say whether you need to be seen in person.' : ''} If you would rather see someone in person, type an approximate area in the wizard and I will search again.\n\nThe booking is prepared on the right—confirm each step.`,
-          {
-            zh: ['要带什么？', '视频问诊怎么报销？'],
-            en: ['What should I bring?', 'How is a video consult covered?'],
-          },
-        );
-      }
+      if (personalisedBy.includes('preferredLanguage'))
+        because.push(pick(lang, '有说中文的 GP', 'has a Mandarin-speaking GP'));
+      const name = first?.name.replace(' (demo)', '') ?? '';
+      const whenText = firstSlot
+        ? timeLabel(firstSlot.startsAt, lang)
+        : pick(lang, '明天', 'tomorrow');
+      message(
+        ctx,
+        usePreferences && because.length
+          ? `找到了 ${providers.length} 个选项。最推荐 ${name}：${because.join('，')}。最早 ${whenText}，自付约 ${first?.outOfPocket?.max === 0 ? '0' : 'A$20–45'}。\n\n预约向导已在右侧准备好：需求来自我们的对话，${profileNote}，语言和时段来自你分享的偏好，保障信息来自保单。逐步确认即可——我不能替你点“确认预约”。`
+          : `按距离找到了 ${providers.length} 个选项，最推荐 ${name}：${first?.reason[lang] ?? ''}最早 ${whenText}。没有使用你的偏好，你随时可以在 Profile 中开启。\n\n预约向导已在右侧准备好，逐步确认即可——我不能替你点“确认预约”。`,
+        usePreferences && because.length
+          ? `I found ${providers.length} options. Top pick ${name}: ${because.join(', ')}. Earliest ${whenText}, about ${first?.outOfPocket?.max === 0 ? 'no gap' : 'A$20–45'} out of pocket.\n\nThe booking is prepared on the right: your need comes from this chat, ${profileNote}, the language and time from the preferences you shared, and the cover details from your policy. Confirm each step—I cannot press “Confirm booking” for you.`
+          : `Ranked by distance, I found ${providers.length} options; top pick ${name}: ${first?.reason[lang] ?? ''} Earliest ${whenText}. Your preferences were not used—you can turn them on in Profile any time.\n\nThe booking is prepared on the right—confirm each step. I cannot press “Confirm booking” for you.`,
+        {
+          zh: ['改成下午', '我想要视频问诊', '要带什么？'],
+          en: [
+            'Change it to the afternoon',
+            'I would prefer a video consult',
+            'What should I bring?',
+          ],
+        },
+      );
       return;
     }
 
@@ -409,10 +444,10 @@ export async function runScript(ctx: ScriptContext, userText: string) {
         typeof draft.fields.providerId?.value === 'string' ? draft.fields.providerId.value : null;
       const draftPostcode =
         typeof draft.fields.postcode?.value === 'string' ? draft.fields.postcode.value : null;
-      const providers = ctx.findProviders(
+      const { providers } = ctx.findProviders(
         typeof draft.fields.serviceType?.value === 'string' ? draft.fields.serviceType.value : 'gp',
         draftPostcode,
-        'zh-CN',
+        null,
       );
       const provider = providers.find((p) => p.id === providerId) ?? providers[0];
       const afternoon = provider?.slots.find((s) => new Date(s.startsAt).getHours() >= 13);
@@ -436,7 +471,7 @@ export async function runScript(ctx: ScriptContext, userText: string) {
 
     case 'video': {
       const draft = ctx.openDraft();
-      const providers = ctx.findProviders('telehealth', null, 'zh-CN');
+      const { providers } = ctx.findProviders('telehealth', null, null);
       const blua = providers.find((p) => p.telehealth) ?? providers[0];
       if (draft) {
         await tool(
@@ -546,7 +581,7 @@ export async function runScript(ctx: ScriptContext, userText: string) {
         return;
       }
       await tool(ctx, 'get_cover', '正在读取心理健康保障', 'Reading your mental-health cover', 900);
-      const providers = ctx.findProviders('mental_health', null, 'zh-CN');
+      const { providers } = ctx.findProviders('mental_health', null, null);
       const blua = providers[0];
       const draft = ctx.createDraft({
         serviceType: 'mental_health',

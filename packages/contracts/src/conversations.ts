@@ -80,7 +80,7 @@ export const ConversationEntrySchema = z.discriminatedUnion('kind', [
     sensitive: z.boolean().default(false),
     status: ConsentEntryStatusSchema,
     /** Scope the user chose when they granted it. */
-    scope: z.enum(['session', 'always']).nullable().default(null),
+    scope: z.enum(['session', 'days90', 'always']).nullable().default(null),
   }),
   EntryBase.extend({ kind: z.literal('receipt'), receiptId: z.string() }),
   EntryBase.extend({

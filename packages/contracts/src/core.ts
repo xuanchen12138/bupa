@@ -10,7 +10,11 @@ export const CONTRACT_VERSION = '0.3.0';
 export const LocalizedTextSchema = z.object({ en: z.string(), zh: z.string() });
 export type LocalizedText = z.infer<typeof LocalizedTextSchema>;
 
-export const PermissionSchema = z.enum(['off', 'session', 'always']);
+/**
+ * How long the assistant may use a profile field: not at all, this session only ("share once"),
+ * for 90 days from the grant, or until withdrawn.
+ */
+export const PermissionSchema = z.enum(['off', 'session', 'days90', 'always']);
 export const ServiceTypeSchema = z.enum([
   'gp',
   'dental',
@@ -34,12 +38,18 @@ export const ProfileFieldNameSchema = z.enum([
   'consultPreference',
   'reminderChannel',
   'needCategory',
+  /** Time of day the member prefers for appointments (morning / afternoon / evening / any). */
+  'preferredTime',
+  /** Longest trip the member is happy to make, in minutes. */
+  'travelDuration',
 ]);
 export const ProfileFieldSchema = z.object({
   value: z.string(),
   permission: PermissionSchema,
   // A session grant must eventually be checked against the active session, not just the enum.
   sessionId: z.string().nullable(),
+  /** When a `days90` grant runs out; null or absent for the other permissions. */
+  expiresAt: z.iso.datetime({ offset: true }).nullable().optional(),
 });
 export const MemberSchema = z.object({
   id: z.string(),
@@ -103,6 +113,8 @@ export const ProviderSchema = z.object({
   address: z.string(),
   suburb: z.string(),
   distanceKm: z.number().nonnegative().nullable(),
+  /** Estimated door-to-door trip; null for telehealth. */
+  travelMinutes: z.number().nonnegative().nullable().optional(),
   languages: z.array(z.string()),
   relationship: z.enum(['bupa_owned', 'partner', 'independent']),
   telehealth: z.boolean().default(false),
@@ -113,15 +125,21 @@ export const ProviderSchema = z.object({
   outOfPocket: CostRangeSchema.nullable(),
   demo: z.literal(true),
 });
+export const PreferredTimeSchema = z.enum(['morning', 'afternoon', 'evening', 'any']);
 export const ProviderSearchSchema = z.object({
   service: ServiceTypeSchema,
   postcode: z.string().nullable(),
   language: z.string().nullable(),
   telehealthOnly: z.boolean().default(false),
+  /** Explicit preferences; the server may also apply permitted profile preferences itself. */
+  preferredTime: PreferredTimeSchema.nullable().optional(),
+  maxTravelMinutes: z.number().positive().nullable().optional(),
 });
 export const ProviderSearchResultSchema = z.object({
   providers: z.array(ProviderSchema),
   rankingNote: LocalizedTextSchema,
+  /** Profile preferences the ranking actually used, so the UI can say so. */
+  personalisedBy: z.array(ProfileFieldNameSchema).optional(),
 });
 
 export const WizardFieldValueSchema = z.union([z.string(), z.boolean(), z.number(), z.null()]);
@@ -208,8 +226,8 @@ export const ScheduleSchema = z.object({
   cards: z.array(ProactiveCardSchema).default([]),
 });
 
-export const ConsentScopeSchema = z.enum(['session', 'always']);
-export const ConsentDecisionSchema = z.enum(['session', 'always', 'deny']);
+export const ConsentScopeSchema = z.enum(['session', 'days90', 'always']);
+export const ConsentDecisionSchema = z.enum(['session', 'days90', 'always', 'deny']);
 export const ConsentRequestSchema = z.object({
   id: z.string(),
   sessionId: z.string(),
@@ -222,7 +240,7 @@ export const ConsentRequestSchema = z.object({
   excludedUses: z.array(z.string()),
   retention: z.string(),
   /** Scopes the user may pick; sensitive requests default to session only. */
-  allowedScopes: z.array(ConsentScopeSchema).default(['session', 'always']),
+  allowedScopes: z.array(ConsentScopeSchema).default(['session', 'days90', 'always']),
   /** Wizard field that triggered the request, when raised from a form. */
   wizardFieldId: z.string().nullable().default(null),
   status: z.enum(['pending', 'granted', 'denied']).default('pending'),
@@ -237,7 +255,7 @@ export const ReceiptSchema = z.object({
   benefit: z.string(),
   excludedUses: z.array(z.string()),
   retention: z.string(),
-  scope: z.enum(['session', 'always', 'single_action']),
+  scope: z.enum(['session', 'days90', 'always', 'single_action']),
   status: z.enum(['active', 'revoked', 'completed', 'cancelled']),
   fields: z.array(z.string()).default([]),
   bookingId: z.string().nullable().default(null),
@@ -321,6 +339,7 @@ export type Cover = z.infer<typeof CoverSchema>;
 export type Provider = z.infer<typeof ProviderSchema>;
 export type ProviderSummary = z.infer<typeof ProviderSummarySchema>;
 export type ProviderSearch = z.infer<typeof ProviderSearchSchema>;
+export type PreferredTime = z.infer<typeof PreferredTimeSchema>;
 export type ProviderSearchResult = z.infer<typeof ProviderSearchResultSchema>;
 export type Slot = z.infer<typeof SlotSchema>;
 export type WizardFieldValue = z.infer<typeof WizardFieldValueSchema>;

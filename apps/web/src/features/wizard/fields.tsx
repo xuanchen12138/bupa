@@ -26,22 +26,6 @@ type Copy = {
   retention: string;
 };
 const consentCopy: Partial<Record<ProfileFieldName, Record<Locale, Copy>>> = {
-  postcode: {
-    en: {
-      data: 'Postcode (from your profile)',
-      purpose: 'Find clinics near you and rank them by distance',
-      benefit: 'Nearby options with an out-of-pocket estimate and the earliest time',
-      excluded: ['Pricing or renewal', 'Claims assessment', 'Marketing'],
-      retention: 'This time: deleted when the conversation ends · Always: until you withdraw it',
-    },
-    zh: {
-      data: '邮编（来自你的 Profile）',
-      purpose: '查找你附近的诊所并按距离排序',
-      benefit: '附近的选项，附自付估算和最早可约时间',
-      excluded: ['定价或续保', '理赔审核', '营销'],
-      retention: '仅本次：对话结束后删除 · 始终允许：直到你撤回',
-    },
-  },
   preferredLanguage: {
     en: {
       data: 'Preferred language (from your profile)',
@@ -156,7 +140,7 @@ export function InlineConsent({ def }: { def: WizardFieldDefinition }) {
       benefit: copy.benefit,
       excludedUses: copy.excluded,
       retention: copy.retention,
-      allowedScopes: ['session', 'always'],
+      allowedScopes: ['session', 'days90', 'always'],
       wizardFieldId: def.id,
     });
     setRequest(created);

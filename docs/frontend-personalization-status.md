@@ -5,15 +5,15 @@
 
 ## 1. 交付范围
 
-| 编号  | 内容                                                                                                                                                                                                                                                                | 状态                                 |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| FE-01 | `packages/contracts/src/conversations.ts`、`personalization.ts`，主入口 `index.ts` 重新导出；旧 0.2.0 schema 迁到 `core.ts`，内容不变；`CONTRACT_VERSION = '0.3.0'`；`WizardDraft.conversationId`（可选）、`ApiError.retryable`（可选）；`fixtures.ts` 新增 `demoConversationSeed()` | 已完成，BE 的 M0 检查通过            |
-| FE-02 | `apps/web/src/mock/persistence.ts`（IndexedDB 版本化快照 + 内存回退）、`history-repository.ts`（对话/消息纯函数）、`health-overview.ts`（确定性抽取、状态分类、建议规则）、`service.ts` 改为持久化并实现全部 §8.3 接口                                              | 已完成，18 个 Node 单测通过          |
-| FE-03 | `stores/chat.ts` 以 conversationId 为键；新建/切换/删除/恢复/中断分开；`features/chat/history-list.tsx` 侧栏历史；`lib/api.ts` 新接口 + `features` 能力标记                                                                                                         | 已完成                               |
-| FE-04 | `timeline.tsx` 按持久 entry 渲染（consent/wizard/booking 只读恢复、过期提示）；来源定位并暂停自动滚动；`wizard.ts` 记录 conversationId；提交结果写回草稿所属对话                                                                                                     | 已完成                               |
-| FE-05 | `features/dashboard/health-overview.tsx`、`health-suggestions.tsx`、`use-suggestion-actions.ts`；Dashboard 顶部概览 → 建议 → 原日程                                                                                                                                  | 已完成                               |
-| FE-06 | `features/profile/personalization-section.tsx`（独立开关 + 用途回执）；中英文词典 322 键对齐；query keys 与失效                                                                                                                                                       | 已完成                               |
-| FE-07 | 本文、`apps/web/test/*`、`pnpm --filter @bupa/web test`                                                                                                                                                                                                              | 见第 5 节                            |
+| 编号  | 内容                                                                                                                                                                                                                                                                                 | 状态                        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| FE-01 | `packages/contracts/src/conversations.ts`、`personalization.ts`，主入口 `index.ts` 重新导出；旧 0.2.0 schema 迁到 `core.ts`，内容不变；`CONTRACT_VERSION = '0.3.0'`；`WizardDraft.conversationId`（可选）、`ApiError.retryable`（可选）；`fixtures.ts` 新增 `demoConversationSeed()` | 已完成，BE 的 M0 检查通过   |
+| FE-02 | `apps/web/src/mock/persistence.ts`（IndexedDB 版本化快照 + 内存回退）、`history-repository.ts`（对话/消息纯函数）、`health-overview.ts`（确定性抽取、状态分类、建议规则）、`service.ts` 改为持久化并实现全部 §8.3 接口                                                               | 已完成，18 个 Node 单测通过 |
+| FE-03 | `stores/chat.ts` 以 conversationId 为键；新建/切换/删除/恢复/中断分开；`features/chat/history-list.tsx` 侧栏历史；`lib/api.ts` 新接口 + `features` 能力标记                                                                                                                          | 已完成                      |
+| FE-04 | `timeline.tsx` 按持久 entry 渲染（consent/wizard/booking 只读恢复、过期提示）；来源定位并暂停自动滚动；`wizard.ts` 记录 conversationId；提交结果写回草稿所属对话                                                                                                                     | 已完成                      |
+| FE-05 | `features/dashboard/health-overview.tsx`、`health-suggestions.tsx`、`use-suggestion-actions.ts`；Dashboard 顶部概览 → 建议 → 原日程                                                                                                                                                  | 已完成                      |
+| FE-06 | `features/profile/personalization-section.tsx`（独立开关 + 用途回执）；中英文词典 322 键对齐；query keys 与失效                                                                                                                                                                      | 已完成                      |
+| FE-07 | 本文、`apps/web/test/*`、`pnpm --filter @bupa/web test`                                                                                                                                                                                                                              | 见第 5 节                   |
 
 未包含：服务端接口、真实模型、跨设备同步、搜索/置顶/重命名、历史分页 UI（契约已有 cursor 字段，mock 返回 `nextCursor: null`）。
 
@@ -47,25 +47,60 @@
 
 ## 5. 实际执行的检查
 
-| 检查                                                              | 结果                                | 说明                                                                                                   |
-| ----------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `tsc -p packages/contracts`（构建 dist）                         | 通过                                | 在协作 VM 用仓库内 TypeScript 5.9.3 执行                                                              |
-| `tsc --noEmit -p apps/web`、`apps/api`                            | 通过                                | api 的类型检查证明 0.2.0 生产者仍兼容                                                                  |
-| `apps/api/test/personalization-contract.check.ts`                 | 通过（2/2）                         | BE 的 M0 消费检查，用 `node --experimental-strip-types --test` 运行                                    |
-| `apps/web/test/health-overview.test.ts`、`service.test.ts`        | 通过（18/18）                       | 覆盖播种、刷新恢复、幂等、流中断、状态更新、dismiss、start/预约关联/取消、删除链、开关、会话过期、写失败重试、重置 |
-| Prettier `--check apps/web packages/contracts`                    | 通过                                | 只格式化本轮改动文件                                                                                   |
-| `pnpm build`、`vite build`                                        | **未执行**                          | 协作 VM 无 Linux esbuild 二进制；请在 Windows 上运行 `pnpm typecheck && pnpm build`                    |
-| §10.1 浏览器验收                                                  | 见第 6 节                           |                                                                                                        |
+| 检查                                                       | 结果          | 说明                                                                                                               |
+| ---------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `tsc -p packages/contracts`（构建 dist）                   | 通过          | 在协作 VM 用仓库内 TypeScript 5.9.3 执行                                                                           |
+| `tsc --noEmit -p apps/web`、`apps/api`                     | 通过          | api 的类型检查证明 0.2.0 生产者仍兼容                                                                              |
+| `apps/api/test/personalization-contract.check.ts`          | 通过（2/2）   | BE 的 M0 消费检查，用 `node --experimental-strip-types --test` 运行                                                |
+| `apps/web/test/health-overview.test.ts`、`service.test.ts` | 通过（18/18） | 覆盖播种、刷新恢复、幂等、流中断、状态更新、dismiss、start/预约关联/取消、删除链、开关、会话过期、写失败重试、重置 |
+| Prettier `--check apps/web packages/contracts`             | 通过          | 只格式化本轮改动文件                                                                                               |
+| `pnpm build`、`vite build`                                 | **未执行**    | 协作 VM 无 Linux esbuild 二进制；请在 Windows 上运行 `pnpm typecheck && pnpm build`                                |
+| §10.1 浏览器验收                                           | 见第 6 节     |                                                                                                                    |
 
 运行前端单测：`pnpm --filter @bupa/web test`（Node 24 原生剥离类型；Node 22 需 `node --experimental-strip-types --test test/*.test.ts`）。测试直接导入 `src/mock/*.ts`，因此这些模块使用带 `.ts` 后缀的相对导入，并在 `apps/web/tsconfig.json` 开启 `allowImportingTsExtensions`。
 
 ## 6. §10.1 浏览器验收
 
-（待填：以下由 FE 在 `pnpm dev` + 浏览器中逐项执行后记录。）
+2026-09-28 在用户机器的 `pnpm dev`（mock 模式，Edge 内置浏览器面板）中通过 DOM 操作逐项执行；结果按当时代码记录，之后的第 8 节改动只重跑了单测，未重新做浏览器验收。
 
-## 7. 需要 BE 配合 / 待办
+| ID    | 结果 | 备注                                                                                                               |
+| ----- | ---- | ------------------------------------------------------------------------------------------------------------------ |
+| P1-01 | 通过 | 首次打开：侧栏「Arm injury · SAMPLE」，Dashboard 顶部概览 + 两条建议，「虚构数据 / 演示逻辑 / 演示预设」标识       |
+| P1-02 | 通过 | 两段新对话独立；反复点新对话不产生空记录                                                                           |
+| P1-03 | 通过 | 刷新后选中项、消息、顺序、建议状态恢复                                                                             |
+| P1-04 | 通过 | 读取旧对话不改排序；回复后前移                                                                                     |
+| P1-05 | 通过 | 等待授权时切换：原轮次显示「已停止」，授权卡变「已过期」，新对话不受影响，输入框可用                               |
+| P1-06 | 通过 | 删除非当前 / 当前 / 最后一条；刷新不复活；最后一条删除后为「还没有保存的对话」                                     |
+| P1-07 | 通过 | 「查看来源」打开原对话、高亮原消息（`.entry-focused`），不被自动滚动覆盖                                           |
+| P1-08 | 通过 | 删除手臂来源：概览立即为「还没有相关内容」，建议消失；删除对话框说明来源影响                                       |
+| P1-09 | 通过 | 「好一些但还有点疼」→ 有所好转（两条建议保留）；「已经完全恢复了」→ 已恢复（建议收起）                             |
+| P1-10 | 通过 | 「暂不需要」后新增消息触发重算并刷新，建议仍为 dismissed，事项仍可见                                               |
+| P1-11 | 通过 | 双击「准备 GP 预约」只创建一段后续对话；向导 need 字段预填「（14 Sept 的对话中提到）」，来源标签 From chat；无预约 |
+| P1-12 | 通过 | 五步提交后 Dashboard 出现预约/回执；建议变「GP visit arranged」；伤情仍为「尚未更新近况」                          |
+| P1-13 | 通过 | 切到另一段对话后从 Dashboard 草稿恢复并提交，预约条目回到后续对话                                                  |
+| P1-14 | 通过 | 刷新后预约可读；删除来源对话后预约保留、概览移除、后续对话中的衍生提示显示「来源已被删除」                         |
+| P1-15 | 通过 | 关闭：概览「个性化已关闭」、用途回执 revoked、对话仍在；重新开启后按现存历史恢复且不再标「演示预设」               |
+| P1-16 | 部分 | 中英文等价已核对；侧栏可折叠、删除按钮可键盘聚焦；窄窗口未系统测试（原型定位桌面）                                 |
+| P1-17 | 单测 | 存储写失败/重试、损坏快照由 `service.test.ts` 与 `persistence.ts` 覆盖；浏览器内未人工模拟                         |
+| P1-18 | 通过 | 重置后示例重新播种；原 GP 路径（授权 → 向导 → 改成下午高亮）可用                                                   |
+
+验收中修复的问题：zustand 选择器返回新数组导致的无限渲染；对话标题在首轮完成前为空；同一分钟内新建对话的排序不稳定（改为秒级时间戳）；删除来源后其他对话缓存未刷新；剧本把「关于之前提到的手臂受伤……好一些了」误判为新伤情。
+
+## 7. 2026-09-29 流程调整
+
+按用户反馈调整（单测 21/21 通过，浏览器验收待开发服务器重启后补做）：
+
+- **对话流程**：`我不舒服 / 我感冒了 / i feel sick` → 安全检查 → 推荐看 GP（不诊断）→ `get_cover` 用 Bupa 已有的保单估算自付 → 说明 Bupa 已有邮编、可直接查附近诊所 → 弹授权卡请求使用 **Profile 中预设的偏好**（就诊时间、可接受路程、语言、就诊方式、口译）→ 按偏好（或仅按距离）排序并打开向导。邮编与姓名/会员号/电话不再请求授权。
+- **授权卡**：只保留「要用的数据 / 用途 / 你会得到什么」；按钮为「分享一次 / 分享 90 天 / 始终允许 / 暂不」。`ConsentRequest.excludedUses`、`retention` 仍在契约与回执中，只是不在卡片上显示。
+- **契约**：`Permission` 与 `ConsentScope/Decision`、`Receipt.scope` 增加 `days90`；`ProfileField.expiresAt`（可选）；`ProfileFieldName` 增加 `preferredTime`、`travelDuration`；`ProviderSearch` 增加可选 `preferredTime`、`maxTravelMinutes`；`ProviderSearchResult.personalisedBy`（可选）；`Provider.travelMinutes`（可选）。向导定义去掉 postcode/name/memberNumber/phone 的 `consent`。`pnpm --filter @bupa/api typecheck` 仍通过。
+- **Mock**：90 天授权记录 `expiresAt`，到期或加载时自动降为 off 并撤销回执；`findProviders` 只在有权限时应用偏好（偏好时段的时段排前、超出路程扣分），并返回 `personalisedBy`。
+- **Profile**：个人信息只读展示并标「Bupa 已持有」；偏好项改为 偏好时段 / 可接受路程 / 首选语言 / 就诊方式 / 口译 / 提醒方式，每项控制为 关闭 / 一次 / 90 天 / 始终（90 天显示有效期）；个性化完整度改为前五项。
+- **向导第 3 步**：显示「已按你分享的偏好排序：…」或「仅按距离排序」，并显示估算路程分钟数。
+
+## 8. 需要 BE 配合 / 待办
 
 - `packages/contracts/package.json` 版本号是否同步到 0.3.0（安装窗口）。
 - `apps/web/package.json` 新增 `test` 脚本使用 Node 内置 test runner，未新增依赖；若希望进入根 `pnpm test`，由 BE 在根脚本追加 `pnpm --filter @bupa/web test`。
 - HTTP adapter 已实现但未联调；BE 上线新路由后通知 FE 翻转 `features` 标记并执行 §10.2 的 FE 侧联调。
+- BE 的 `permissions.ts` 目前只区分 `session/always`；接入 `days90` 时需要为字段记录 `expiresAt` 并在到期时按 off 处理（契约已允许该字段缺省，因此现有后端不受影响）。
 - 已知限制：mock 的诊所时段相对「当前时间」生成，跨天刷新后旧草稿中的 slotId 可能失效（会话 30 分钟过期通常先发生）；历史列表不分页；示例对话的语言按首次初始化时的界面语言固定。

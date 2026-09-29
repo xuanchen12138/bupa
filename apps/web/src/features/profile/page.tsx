@@ -24,7 +24,7 @@ import {
 import { toast } from '@/components/ui/toast';
 import { useT, type DictionaryKey } from '@/i18n';
 import { api } from '@/lib/api';
-import { formatDateTime } from '@/lib/format';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { keys, invalidateAll } from '@/lib/query';
 import { cn } from '@/lib/utils';
 import { useNavigation } from '@/stores/navigation';
@@ -41,18 +41,22 @@ const personalFields: ProfileFieldName[] = [
   'emergencyContact',
   'postcode',
 ];
+// Preferences the member sets in the product. They feed the recommendation profile only
+// while the member has shared them; each row carries its own "AI use" control.
 const preferenceFields: Array<{ id: ProfileFieldName; options: string[] }> = [
+  { id: 'preferredTime', options: ['morning', 'afternoon', 'evening', 'any'] },
+  { id: 'travelDuration', options: ['15', '30', '45', '60'] },
   { id: 'preferredLanguage', options: ['zh-CN', 'en'] },
-  { id: 'interpreter', options: ['yes', 'no'] },
   { id: 'consultPreference', options: ['either', 'in_person', 'video'] },
+  { id: 'interpreter', options: ['yes', 'no'] },
   { id: 'reminderChannel', options: ['push', 'sms', 'email'] },
 ];
 const completenessFields: ProfileFieldName[] = [
+  'preferredTime',
+  'travelDuration',
   'preferredLanguage',
-  'postcode',
-  'interpreter',
   'consultPreference',
-  'needCategory',
+  'interpreter',
 ];
 
 export function ProfilePage() {
@@ -188,21 +192,22 @@ export function ProfilePage() {
         <div className="mt-6 grid grid-cols-[1fr_1fr] gap-6">
           {/* --------------------------------------------- Personal info */}
           <Card className="p-5">
-            <SectionHeading title={t('profile.personal')} hint={t('profile.personalHint')} />
+            <SectionHeading
+              title={t('profile.personal')}
+              hint={t('profile.personalHint')}
+              action={
+                <Badge tone="neutral" className="shrink-0">
+                  {t('profile.heldByBupa')}
+                </Badge>
+              }
+            />
             <ul className="mt-4 divide-y divide-border">
               {personalFields.map((field) => (
-                <li key={field} className="grid grid-cols-[1fr_auto] items-center gap-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">{t(`profile.field.${field}`)}</p>
-                    <p className="truncate text-sm font-medium">
-                      {fields[field].value || t('profile.value.empty')}
-                    </p>
-                  </div>
-                  <PermissionControl
-                    value={fields[field].permission}
-                    onChange={(permission) => void setPermission(field, permission)}
-                    label={t(`profile.field.${field}`)}
-                  />
+                <li key={field} className="grid grid-cols-[140px_1fr] items-center gap-4 py-2.5">
+                  <p className="text-xs text-muted-foreground">{t(`profile.field.${field}`)}</p>
+                  <p className="truncate text-sm font-medium">
+                    {fields[field].value || t('profile.value.empty')}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -231,26 +236,12 @@ export function ProfilePage() {
                   </div>
                   <PermissionControl
                     value={fields[id].permission}
+                    expiresAt={fields[id].expiresAt ?? null}
                     onChange={(permission) => void setPermission(id, permission)}
                     label={t(`profile.field.${id}`)}
                   />
                 </li>
               ))}
-              <li className="grid grid-cols-[1fr_auto] items-center gap-4 py-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('profile.field.needCategory')}</p>
-                  <p className="text-sm font-medium">
-                    {fields.needCategory.value
-                      ? t(`service.${fields.needCategory.value}` as DictionaryKey)
-                      : t('profile.value.empty')}
-                  </p>
-                </div>
-                <PermissionControl
-                  value={fields.needCategory.permission}
-                  onChange={(permission) => void setPermission('needCategory', permission)}
-                  label={t('profile.field.needCategory')}
-                />
-              </li>
             </ul>
             <p className="mt-3 flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
               <ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
@@ -306,18 +297,23 @@ export function ProfilePage() {
 
 function PermissionControl({
   value,
+  expiresAt,
   onChange,
   label,
 }: {
   value: Permission;
+  expiresAt?: string | null;
   onChange: (permission: Permission) => void;
   label: string;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   return (
     <div className="flex flex-col items-end gap-1">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-subtle">
         {t('profile.aiUse')}
+        {value === 'days90' && expiresAt
+          ? ` · ${t('profile.expires')} ${formatDate(expiresAt, locale, { weekday: undefined })}`
+          : ''}
       </span>
       <Segmented
         value={value}
@@ -326,6 +322,7 @@ function PermissionControl({
         options={[
           { value: 'off', label: t('permission.off') },
           { value: 'session', label: t('permission.session') },
+          { value: 'days90', label: t('permission.days90') },
           { value: 'always', label: t('permission.always') },
         ]}
       />
@@ -382,7 +379,11 @@ function ReceiptRow({
             </Badge>
             {!isAction ? (
               <Badge tone="neutral">
-                {receipt.scope === 'always' ? t('permission.always') : t('permission.session')}
+                {receipt.scope === 'always'
+                  ? t('permission.always')
+                  : receipt.scope === 'days90'
+                    ? t('permission.days90')
+                    : t('permission.session')}
               </Badge>
             ) : null}
             {receipt.status === 'revoked' ? (

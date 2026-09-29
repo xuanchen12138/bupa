@@ -1,4 +1,4 @@
-import { Building2, Clock, Info, Languages, MapPin, Video } from 'lucide-react';
+import { Building2, Clock, Info, Languages, MapPin, Sparkles, Video } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import type { Provider, WizardDraft, WizardFieldValue } from '@bupa/contracts';
 import type { WizardFieldDefinition } from '@bupa/contracts/wizard';
@@ -136,7 +136,11 @@ export function ProviderField({
                           <span className="inline-flex items-center gap-1">
                             <MapPin size={12} aria-hidden="true" />
                             {provider.distanceKm !== null
-                              ? `${provider.distanceKm} ${t('common.km')}`
+                              ? `${provider.distanceKm} ${t('common.km')}${
+                                  provider.travelMinutes != null
+                                    ? ` · ≈${provider.travelMinutes} ${t('wizard.travel')}`
+                                    : ''
+                                }`
                               : t('common.online')}
                           </span>
                           {earliest ? (
@@ -193,13 +197,30 @@ export function ProviderField({
           </p>
         ) : null}
         {providers.data ? (
-          <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-4 text-subtle">
-            <Info size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>
-              <span className="font-semibold">{t('wizard.rankingNote')}: </span>
-              {tx(providers.data.rankingNote)}
-            </span>
-          </p>
+          <div className="mt-2 space-y-1">
+            <p
+              className={cn(
+                'flex items-start gap-1.5 text-[11px] leading-4',
+                providers.data.personalisedBy?.length ? 'text-primary-strong' : 'text-subtle',
+              )}
+            >
+              <Sparkles size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>
+                {providers.data.personalisedBy?.length
+                  ? `${t('wizard.personalisedBy')}: ${providers.data.personalisedBy
+                      .map((field) => t(`profile.field.${field}`))
+                      .join(' · ')}`
+                  : t('wizard.notPersonalised')}
+              </span>
+            </p>
+            <p className="flex items-start gap-1.5 text-[11px] leading-4 text-subtle">
+              <Info size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>
+                <span className="font-semibold">{t('wizard.rankingNote')}: </span>
+                {tx(providers.data.rankingNote)}
+              </span>
+            </p>
+          </div>
         ) : null}
         {invalidProvider ? (
           <p role="alert" className="mt-1.5 text-xs font-medium text-destructive">
