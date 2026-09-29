@@ -146,7 +146,24 @@ export class Repository {
     store.persistent = this.path !== ':memory:';
     const saved = this.db.prepare('SELECT business FROM owners WHERE owner_id=?').get(owner);
     if (saved) {
-      const business = parse(BusinessSchema, saved.business);
+      const persisted = JSON.parse(String(saved.business));
+      const fields = persisted?.profile?.member?.fields;
+      let upgraded = false;
+      // Older snapshots predate these preferences. Add empty, unshared values only;
+      // never replace saved choices or infer permission from the current demo fixture.
+      if (fields && typeof fields === 'object' && !Array.isArray(fields)) {
+        for (const name of ['preferredTime', 'travelDuration']) {
+          if (Object.hasOwn(fields, name)) continue;
+          fields[name] = { value: '', permission: 'off', sessionId: null };
+          upgraded = true;
+        }
+      }
+      const business = BusinessSchema.parse(persisted);
+      // Validate before writing; preserve all other stored data, including unknown keys.
+      if (upgraded)
+        this.db
+          .prepare('UPDATE owners SET business=? WHERE owner_id=?')
+          .run(JSON.stringify(persisted), owner);
       Object.assign(store, { ...business, submissions: new Map(business.submissions) });
       // Unsubmitted payload, permission sessions and consent waiters are deliberately not restored.
       for (const receipt of store.receipts)
