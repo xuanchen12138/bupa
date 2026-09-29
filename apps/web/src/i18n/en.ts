@@ -118,8 +118,8 @@ export const en = {
   'consent.excluded': 'Never used for',
   'consent.retention': 'Kept for',
   'consent.allowOnce': 'Share once',
-  'consent.share90': 'Share for 90 days',
-  'consent.allowAlways': 'Always allow',
+  'consent.share90': 'Share custom days',
+  'consent.allowAlways': 'Always sharing',
   'consent.deny': 'Not now',
   'consent.granted': 'Allowed',
   'consent.grantedOnce': 'Shared once',
@@ -128,6 +128,13 @@ export const en = {
   'consent.denied': 'Declined · continuing without it',
   'consent.revokeHint': 'You can withdraw this at any time in Profile.',
   'consent.pending': 'Waiting for your decision',
+  'consent.usageToggle': 'See how your data will be used',
+  'consent.usageHide': 'Hide usage conditions',
+  'consent.usage.1': 'Only the assistant reads it, for this purpose. No person at Bupa sees it.',
+  'consent.usage.2': 'Never used for pricing, renewal, claims assessment or marketing.',
+  'consent.usage.3': 'Not sold or shared with any third party.',
+  'consent.usage.4':
+    'You can withdraw it at any time in Profile; a receipt of this decision is kept there.',
 
   // Wizard
   'wizard.step': 'Step',

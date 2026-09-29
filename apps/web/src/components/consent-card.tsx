@@ -1,4 +1,14 @@
-import { Check, Database, Gift, ShieldCheck, Target, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Database,
+  Gift,
+  ShieldCheck,
+  Target,
+  X,
+} from 'lucide-react';
+import { useId, useState } from 'react';
 import type { ConsentDecision, ConsentRequest } from '@bupa/contracts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/primitives';
@@ -21,6 +31,8 @@ export function ConsentCard({
   className?: string;
 }) {
   const { t } = useT();
+  const [showUsage, setShowUsage] = useState(false);
+  const usageId = useId();
   const decided = decision !== null;
   const sensitive = request.sensitive;
   // Three things the member needs to decide: what, why, and what they get in return.
@@ -96,6 +108,39 @@ export function ConsentCard({
           </div>
         ))}
       </dl>
+
+      <div className="border-t border-border px-4 py-2">
+        <button
+          type="button"
+          onClick={() => setShowUsage((open) => !open)}
+          aria-expanded={showUsage}
+          aria-controls={usageId}
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+        >
+          {showUsage ? (
+            <ChevronUp size={13} aria-hidden="true" />
+          ) : (
+            <ChevronDown size={13} aria-hidden="true" />
+          )}
+          {showUsage ? t('consent.usageHide') : t('consent.usageToggle')}
+        </button>
+        {showUsage ? (
+          <ul
+            id={usageId}
+            className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground animate-fade-in"
+          >
+            {(['1', '2', '3', '4'] as const).map((n) => (
+              <li key={n} className="flex gap-2">
+                <span
+                  aria-hidden="true"
+                  className="mt-[7px] size-1 shrink-0 rounded-full bg-primary"
+                />
+                {t(`consent.usage.${n}`)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
 
       {decided ? (
         <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
